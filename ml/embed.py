@@ -28,7 +28,7 @@ from PIL import Image
 BASE = Path(r"F:\BA\表情包\.emoji-tool")
 ROOT = Path(r"F:\BA\表情包")
 ML = BASE / "ml"
-MODEL = Path(os.environ.get("EMBED_MODEL", r"C:\Users\daoshiyige\WorkBuddy\emoji-tool\_diag\models\vision_model.onnx"))
+MODEL = Path(os.environ.get("EMBED_MODEL", str(Path(__file__).resolve().parent / "models" / "vision_model.onnx")))
 SIZE = 224
 RAW_DIM = 512
 DIM = 128

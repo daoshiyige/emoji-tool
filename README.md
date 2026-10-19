@@ -85,7 +85,7 @@ venv\Scripts\python app.py --open
 ```bat
 :: 1) 用装了 onnxruntime + numpy 的 Python（本机是 WorkBuddy 的独立环境，不碰 venv）
 ::    没装过的话先：python -m pip install numpy onnxruntime
-:: 2) 全量建索引（98k 张约 1 小时，6 进程；模型默认在 _diag/models，可用 EMBED_MODEL 覆盖）
+:: 2) 全量建索引（98k 张约 1 小时，6 进程；模型默认放在 ml/models/vision_model.onnx，可用 EMBED_MODEL 覆盖）
 python .emoji-tool\ml\embed.py --rebuild --workers 6
 
 :: 3) 之后新增图片：增量，只算新文件（几分钟）
