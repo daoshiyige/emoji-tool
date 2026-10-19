@@ -375,3 +375,10 @@ input:focus, select:focus { border-color: var(--accent); }
 .card-info .rename-inline { width: 100%; font-size: 12px; }
 .insp-name-row .rename-inline { flex: 1; min-width: 0; }
 .vw-name .rename-inline, .rename-inline.vw-name { width: 100%; }
+
+/* 角色候选（只推荐，不自动打标） */
+.sug-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+.sug-row .sug-label { font-size: 11px; color: var(--mut2); letter-spacing: 1px; }
+.sug-chip { font-size: 12px; padding: 2px 10px; border-radius: 12px; border: 1px dashed var(--line); background: #fff; color: var(--txt); transition: all .1s; }
+.sug-chip:hover { border-color: var(--accent); color: var(--accent); }
+.sug-chip.on { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }

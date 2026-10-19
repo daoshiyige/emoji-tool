@@ -74,6 +74,28 @@ venv\Scripts\python app.py --open
 - **批量操作**：批量打标 `/api/tags_batch`、批量废纸篓 `/api/trash_batch`、批量恢复 `/api/restore_batch`。
 - **未处理画师归位**：把 `未处理` 里已识别画师的文件按画师建/并入 `系列N（画师）` 文件夹（`/api/inbox_artist`）。
 
+## 角色候选（只推荐，不自动打标）
+
+属性面板/查看器里会显示 3 个角色候选，点一下才打标；不点就什么都不发生。
+
+- 候选来自离线算好的图像特征索引（`ml/`）：每张图一个 128 维向量，与各角色质心算余弦
+- **网页端不加载模型、不依赖 numpy**：只按行号读 `ml/vectors.bin` 里的 128 个 float16，纯 Python 点积，约 3ms
+- 索引需要单独生成（用独立的 ML 环境，不影响 venv）：
+
+```bat
+:: 1) 用装了 onnxruntime + numpy 的 Python（本机是 WorkBuddy 的独立环境，不碰 venv）
+::    没装过的话先：python -m pip install numpy onnxruntime
+:: 2) 全量建索引（98k 张约 1 小时，6 进程；模型默认在 _diag/models，可用 EMBED_MODEL 覆盖）
+python .emoji-tool\ml\embed.py --rebuild --workers 6
+
+:: 3) 之后新增图片：增量，只算新文件（几分钟）
+python .emoji-tool\ml\embed.py
+```
+
+> 多进程在这台机器上需要沙箱外执行；单进程（`--workers 1`）也行，只是慢 5 倍。
+
+准确率：top-1 约 48%、top-3 约 63%（210 个角色）。**所以只做候选，不做自动打标**——点错了的代价只是不点它。
+
 ## 尚未实现（下一步）
 
 - 文件改动/移动的实时监听（目前用「扫描」按钮全量重扫）

@@ -23,3 +23,11 @@ move_report_*.txt
 # ===== 一次性调试脚本（写死了本机路径） =====
 _driver.py
 _fullscan.py
+
+# ===== ML 索引（体积大，可由 ml/embed.py 重建） =====
+ml/vectors.bin
+ml/_raw.bin
+ml/_raw.txt
+ml/index.txt
+ml/whiten.bin
+ml/proto.json

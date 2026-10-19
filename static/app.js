@@ -941,6 +941,7 @@ function openInspector(f) {
   img.onload = () => { $("insp-dim").textContent = img.naturalWidth ? `${img.naturalWidth} × ${img.naturalHeight}` : ""; };
   img.src = fileUrl(f.rel, f.mtime);
   refreshTagEditors();
+  loadSuggestions(f.rel, "insp");
   let meta =
     `<b>路径</b><span>${esc(f.folder || "未处理")}</span>` +
     `<b>类型</b><span>${typeOf(f.name)}</span>` +
@@ -990,6 +991,51 @@ function mountTagEditor(containerId) {
 function mountTagEditors() {
   mountTagEditor("insp-tag-edit");
   mountTagEditor("vw-tag-edit");
+}
+
+/* ================= 角色候选（只推荐，不自动打标） ================= */
+const sugSeq = { insp: 0, vw: 0 };
+
+function ensureSuggestHost(where) {
+  let el = $(where + "-suggest");
+  if (el) return el;
+  const anchor = $(where + "-tag-edit");
+  if (!anchor || !anchor.parentElement) return null;
+  el = document.createElement("div");
+  el.className = "sug-row";
+  el.id = where + "-suggest";
+  el.hidden = true;
+  el.innerHTML = '<span class="sug-label">推荐</span><span class="sug-chips"></span>';
+  anchor.parentElement.insertBefore(el, anchor);
+  return el;
+}
+
+async function loadSuggestions(rel, where) {
+  const host = ensureSuggestHost(where);
+  if (!host) return;
+  const seq = ++sugSeq[where];
+  const box = host.querySelector(".sug-chips");
+  host.hidden = true;
+  if (box) box.innerHTML = "";
+  if (!rel) return;
+  try {
+    const r = await api("/api/suggest?rel=" + encodeURIComponent(rel) + "&n=3");
+    if (seq !== sugSeq[where]) return;
+    const items = (r && r.items) || [];
+    if (!items.length) return;
+    for (const it of items) {
+      const b = document.createElement("button");
+      b.className = "sug-chip";
+      b.textContent = it.character;
+      b.title = `相似度 ${Number(it.score).toFixed(3)}（只是候选，点了才打标）`;
+      b.addEventListener("click", () => {
+        applyTag("character", it.character, rel);
+        b.classList.add("on");
+      });
+      box.appendChild(b);
+    }
+    host.hidden = false;
+  } catch (e) { /* 没有索引/接口不可用时静默 */ }
 }
 
 function mountSugInput(inputEl, sgEl, groups) {
@@ -1716,6 +1762,7 @@ function openViewer(f) {
   $("vw-name").textContent = f.name;
   $("vw-path").textContent = f.folder || "未处理";
   refreshTagEditors();
+  loadSuggestions(f.rel, "vw");
   let vmeta =
     `<b>类型</b><span>${typeOf(f.name)}</span>` +
     `<b>大小</b><span>${fmtSize(f.size)}</span>` +
