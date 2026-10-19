@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表情库 · 本地整理</title>
+  <link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css?v=31">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-mark">BA</span>
+    <span class="brand-name">表情库</span>
+  </div>
+  <div class="view-title" id="view-title">全部文件<span class="sub" id="view-sub"></span></div>
+  <div class="search">
+    <svg viewBox="0 0 24 24" class="ic"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+    <input id="q" type="search" placeholder="搜索文件名、标签拼音缩写…" autocomplete="off">
+    <div class="search-suggest" id="q-suggest" hidden></div>
+  </div>
+  <div class="top-actions">
+    <span class="sort-box" id="sort-box">
+      <select id="sort" title="排序方式">
+        <option value="default">默认排序</option>
+        <option value="name">文件名</option>
+        <option value="type">文件类型</option>
+        <option value="size">文件大小</option>
+        <option value="ctime">创建时间</option>
+        <option value="mtime">更新时间</option>
+      </select>
+      <button id="sort-dir" class="sort-dir" title="升序" data-dir="asc">↑</button>
+    </span>
+    <button id="btn-insp" class="btn ghost" title="显示/隐藏右侧详情栏">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M9 4v16"/></svg>
+      详情
+    </button>
+    <button id="btn-upload" class="btn primary">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M12 16V4m0 0 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      上传到未处理
+    </button>
+    <button id="btn-scan" class="btn ghost" title="全量重新扫描本地文件">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
+      扫描
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sb-head">
+      <button id="btn-sb-collapse" class="sb-toggle" title="收起侧栏">‹</button>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-nav="all">
+        <svg viewBox="0 0 24 24" class="ic"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+        <span>全部文件</span><i class="nav-badge" id="nav-all"></i>
+      </button>
+      <button class="nav-item" data-nav="untagged">
+        <svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="8"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>未标记</span><i class="nav-badge" id="nav-untagged"></i>
+      </button>
+      <button class="nav-item" data-nav="inbox">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M12 3v10m0 0 4-4m-4 4-4-4"/></svg>
+        <span>未处理</span><i class="nav-badge accent" id="nav-inbox"></i>
+      </button>
+      <button class="nav-item" data-nav="trash">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M4 7h16"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"/><path d="M10 11v6m4-6v6"/></svg>
+        <span>废纸篓</span><i class="nav-badge" id="nav-trash"></i>
+      </button>
+    </nav>
+    <div class="side-label">标签</div>
+
+    <section class="tag-group collapsed" id="grp-academy">
+      <div class="grp-head"><span class="grp-dot ac"></span>学院<i class="grp-cnt" id="cnt-academy"></i><svg class="grp-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+      <div class="grp-body">
+        <input class="grp-search" id="search-academy" placeholder="筛选学院（拼音）…" autocomplete="off">
+        <div class="chips" id="chips-academy"></div>
+      </div>
+    </section>
+    <section class="tag-group collapsed" id="grp-character">
+      <div class="grp-head"><span class="grp-dot ch"></span>角色<i class="grp-cnt" id="cnt-character"></i><svg class="grp-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+      <div class="grp-body">
+        <input class="grp-search" id="search-character" placeholder="筛选角色（拼音）…" autocomplete="off">
+        <div class="grp-recent" id="recent-character" hidden>
+          <div class="grp-recent-head">近期<span class="grp-recent-tip">最近用过的角色</span></div>
+          <div class="chips" id="chips-recent-character"></div>
+        </div>
+        <div class="chips" id="chips-character"></div>
+      </div>
+    </section>
+    <section class="tag-group collapsed" id="grp-artist">
+      <div class="grp-head"><span class="grp-dot ar"></span>画师<i class="grp-cnt" id="cnt-artist"></i><svg class="grp-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+      <div class="grp-body">
+        <input class="grp-search" id="search-artist" placeholder="筛选画师…" autocomplete="off">
+        <div class="chips" id="chips-artist"></div>
+      </div>
+    </section>
+    <section class="tag-group collapsed" id="grp-special">
+      <div class="grp-head"><span class="grp-dot sp"></span>特殊类型<i class="grp-cnt" id="cnt-special"></i><svg class="grp-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+      <div class="grp-body">
+        <input class="grp-search" id="search-special" placeholder="筛选类型…" autocomplete="off">
+        <div class="chips" id="chips-special"></div>
+      </div>
+    </section>
+  </aside>
+
+  <main class="content">
+    <div class="toolbar">
+      <div class="tb-left">
+        <div class="ftr-row" id="ftr-row"></div>
+        <span class="result-count" id="result-count"></span>
+        <span class="muted" id="trash-hint" hidden>超过 30 天的文件将自动移入系统回收站</span>
+        <div class="filterbar" id="filterbar"></div>
+      </div>
+      <div class="tb-right">
+        <button id="btn-organize" class="btn ghost small">整理预览</button>
+        <button id="btn-select-all" class="btn ghost small">全选</button>
+        <button id="btn-trash-clear" class="btn danger small" hidden>一键清空</button>
+        <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);cursor:pointer"><input type="checkbox" id="f-untagged"> 只看无标签</label>
+      </div>
+    </div>
+    <div id="note" class="note" hidden></div>
+    <div class="grid" id="grid"></div>
+    <div id="sentinel" class="sentinel">加载中…</div>
+    <div id="empty" class="empty" hidden>没有匹配的文件</div>
+  </main>
+</div>
+
+<!-- 边缘把手（侧栏收回后的展开按钮） -->
+<button id="btn-sb-expand" class="edge-handle left" title="展开侧栏" hidden>›</button>
+<button id="btn-insp-expand" class="edge-handle right" title="展开右侧详情栏" hidden>‹</button>
+
+<!-- 右侧属性面板 -->
+<aside class="inspector" id="inspector" hidden>
+  <div class="insp-preview"><img id="insp-img" alt="预览"></div>
+  <div class="insp-name-row">
+    <span class="insp-name" id="insp-name"></span>
+    <button class="insp-close" id="insp-close" title="关闭">✕</button>
+  </div>
+  <div class="insp-dim" id="insp-dim"></div>
+  <div class="insp-section">标签</div>
+  <div class="tag-edit" id="insp-tag-edit"></div>
+  <div class="insp-actions">
+    <button id="btn-place-file" class="btn primary full" hidden>归位</button>
+    <button id="btn-reveal-file" class="btn ghost full" title="在资源管理器中定位该文件">打开所在文件夹</button>
+    <button id="btn-trash-file" class="btn danger full">废纸篓</button>
+  </div>
+  <div class="insp-section">信息</div>
+  <div class="insp-meta" id="insp-meta"></div>
+</aside>
+
+<div class="batchbar" id="batchbar" hidden>
+  <span>已选 <b id="batch-count">0</b> 项</span>
+  <div class="batch-actions">
+    <button id="btn-batch-tags" class="btn ghost small">批量打标</button>
+    <button id="btn-batch-trash" class="btn danger small">废纸篓</button>
+    <button id="btn-batch-restore" class="btn ghost small" hidden>恢复选中</button>
+    <button id="btn-batch-clear" class="btn ghost small">取消选择</button>
+  </div>
+</div>
+
+<!-- 全屏查看器 -->
+<div class="viewer" id="viewer" hidden>
+  <div class="vw-stage">
+    <img id="vw-img" alt="预览">
+    <button class="vw-nav vw-prev" id="vw-prev" title="上一张 (←)">‹</button>
+    <button class="vw-nav vw-next" id="vw-next" title="下一张 (→)">›</button>
+    <button class="vw-close" id="vw-close" title="关闭 (Esc)">✕</button>
+  </div>
+  <div class="vw-panel">
+    <div class="vw-name" id="vw-name"></div>
+    <div class="vw-path" id="vw-path"></div>
+    <div class="vw-section">标签</div>
+    <div class="tag-edit" id="vw-tag-edit"></div>
+    <div class="vw-section">信息</div>
+    <div class="vw-meta" id="vw-meta"></div>
+    <div class="vw-actions">
+      <button id="btn-reveal-file-vw" class="btn ghost">打开所在文件夹</button>
+      <button id="btn-trash-file-vw" class="btn danger">废纸篓</button>
+    </div>
+  </div>
+</div>
+
+<!-- 全页拖拽上传提示层 -->
+<div class="drop-overlay" id="drop-overlay" hidden>
+  <div class="drop-overlay-box">
+    <svg viewBox="0 0 24 24" class="ic dz-ic"><path d="M12 16V4m0 0 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+    <div class="drop-overlay-txt">松开以上传到「未处理」</div>
+    <div class="muted">画师标签将自动识别</div>
+  </div>
+</div>
+
+<!-- 新建标签弹窗 -->
+<div class="modal" id="modal-newtag" hidden>
+  <div class="modal-box small">
+    <h3 id="newtag-title">新建标签</h3>
+    <label>标签名</label>
+    <input id="newtag-name" type="text" readonly>
+    <div id="newtag-acad-block">
+      <label>学院</label>
+      <select id="newtag-acad"><option value="">选择学院…</option><option value="__new">＋ 新建学院…</option></select>
+      <input id="newtag-acad-new" type="text" placeholder="新学院名称" hidden autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button id="newtag-cancel" class="btn ghost">取消</button>
+      <button id="newtag-ok" class="btn primary">创建并打标</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑标签弹窗 -->
+<div class="modal" id="modal-tags" hidden>
+  <div class="modal-box">
+    <h3 id="tags-title">编辑标签</h3>
+    <div id="tags-hint" class="hint" hidden></div>
+    <div id="tags-file" class="muted"></div>
+    <label>角色（可多选，学院自动关联）</label>
+    <input id="tags-char-q" type="search" placeholder="筛选角色（拼音）…" autocomplete="off">
+    <div id="tags-chars" class="tag-picker"></div>
+    <label>画师（留空 = 不修改）</label>
+    <input id="tags-artist" list="artist-list" placeholder="输入或选择画师" autocomplete="off">
+    <datalist id="artist-list"></datalist>
+    <label>特殊类型</label>
+    <div id="tags-specials" class="tag-picker"></div>
+    <div class="modal-actions">
+      <button id="tags-save" class="btn primary">保存</button>
+      <button id="tags-cancel" class="btn ghost">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 重命名弹窗 -->
+<div class="modal" id="modal-rename" hidden>
+  <div class="modal-box small">
+    <h3>重命名</h3>
+    <div id="rename-path" class="muted"></div>
+    <input id="rename-name" type="text" autocomplete="off">
+    <div class="modal-actions">
+      <button id="rename-save" class="btn primary">重命名</button>
+      <button id="rename-cancel" class="btn ghost">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 上传弹窗 -->
+<div class="modal" id="modal-upload" hidden>
+  <div class="modal-box">
+    <h3>上传到「未处理」</h3>
+    <div class="hint">新文件先进入 <b>未处理</b> 文件夹，画师标签自动识别；随后在「未处理」里选择角色即可打标并自动归位到对应学院/角色文件夹。</div>
+    <div class="dropzone" id="dropzone">
+      <svg viewBox="0 0 24 24" class="ic dz-ic"><path d="M12 16V4m0 0 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <div class="dz-text">拖拽图片 / 文件夹到这里</div>
+      <div class="muted">或点击选择文件；拖入文件夹会自动递归搜索图片（可多选/多文件夹）</div>
+      <button id="btn-pick" class="btn primary">选择文件</button>
+      <input id="file-input" type="file" multiple hidden>
+    </div>
+    <div id="upload-list" class="muted"></div>
+    <div class="modal-actions">
+      <button id="upload-close" class="btn ghost">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 抽屉（整理预览） -->
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-head">
+    <span id="drawer-title">整理预览</span>
+    <button id="drawer-close" class="icon" style="color:var(--mut2);font-size:15px">✕</button>
+  </div>
+  <div id="drawer-body" class="drawer-body"></div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="scanbar" class="scanbar" hidden>
+  <div class="scanbar-row"><span id="scan-label">正在扫描…</span><span id="scan-progress"></span></div>
+  <div class="scanbar-track"><i id="scan-fill"></i></div>
+</div>
+
+<script src="/static/app.js?v=33"></script>
+</body>
+</html>

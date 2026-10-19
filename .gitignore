@@ -1,0 +1,25 @@
+# ===== 运行时数据（不入库） =====
+library.db
+library.db.bak_*
+library.db-journal
+library.db-wal
+library.db-shm
+cache/
+trash/
+venv/
+__pycache__/
+*.pyc
+
+# ===== 日志 / 迁移记录 =====
+*.log
+*.log.err
+moves.log
+move_report_*.txt
+
+# ===== 改动前的历史备份（现在由 git 历史兜底） =====
+*.bak_*
+*.bak
+
+# ===== 一次性调试脚本（写死了本机路径） =====
+_driver.py
+_fullscan.py

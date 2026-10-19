@@ -1,0 +1,68 @@
+{
+  "root": "F:\\BA\\表情包",
+  "exclude_dirs": [
+    "杂图",
+    "未处理"
+  ],
+  "exclude_segments": [
+    "语音"
+  ],
+  "image_exts": [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp"
+  ],
+  "special_folders": [
+    "差分",
+    "铸币大头",
+    "圣诞特供"
+  ],
+  "pair_characters": {
+    "桃绿": [
+      "桃",
+      "绿",
+      "桃绿"
+    ],
+    "光望": [
+      "光",
+      "望",
+      "光望"
+    ]
+  },
+  "multi_academy_characters": [
+    "杂鱼酱"
+  ],
+  "artist_min_files": 3,
+  "artist_threshold_ratio": 0.1,
+  "artist_threshold_min": 3,
+  "artist_threshold_mid1": 3.5,
+  "artist_threshold_mid": 4,
+  "artist_threshold_mid2": 4.5,
+  "artist_threshold_split1": 300,
+  "artist_threshold_split2": 500,
+  "artist_threshold_split3": 600,
+  "artist_weight_gif": 1.5,
+  "artist_weight_gif_large": 2.0,
+  "artist_weight_gif_large_mb": 8,
+  "artist_folder_weight_cap": 7,
+  "artist_folder_weight_ratio": 0.4,
+  "port": 5178,
+  "host": "127.0.0.1",
+  "diff_type_denylist": [
+    "未知",
+    "古书馆",
+    "AI",
+    "AI差分",
+    "官方",
+    "官方初始立绘",
+    "初始立绘",
+    "普通",
+    "寝癖",
+    "水着",
+    "制服",
+    "原版",
+    "野营"
+  ]
+}
