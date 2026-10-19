@@ -1,5 +1,8 @@
 * text=auto eol=lf
 
+# Windows 批处理必须是 CRLF
+*.bat text eol=crlf
+
 *.png binary
 *.jpg binary
 *.jpeg binary

@@ -13,6 +13,36 @@
 
 索引、缩略图、废纸篓都放在 `.emoji-tool` 内，不影响原目录。
 
+## 在新电脑上用（clone 下来怎么跑）
+
+```bat
+:: 1) 拉代码（惯例是放成图片根目录下的 .emoji-tool；放别处也行，只要第 3 步的 root 指对）
+git clone git@github.com:daoshiyige/emoji-tool.git .emoji-tool
+cd .emoji-tool
+
+:: 2) 建环境（Python 3.10+，本机 3.13 实测）
+py -3 -m venv venv
+venv\Scripts\python -m pip install -r requirements.txt
+
+:: 3) 把 config.json 的 root 改成这台机器的图片根目录（反斜杠要写 \\，或者直接用 /）
+::    例： "root": "D:/BA/表情包"
+
+:: 4) 启动（双击仓库里的 启动网页.bat 也可以）
+venv\Scripts\python app.py --open
+```
+
+首次启动会自动创建 `library.db`、`cache\`、`trash\`，然后点右上角「扫描」建索引
+（9.6 万张第一次要跑几分钟，之后稳态扫描 1~2 秒）。
+
+注意：
+
+- 目录名不必叫 `.emoji-tool`，放哪都行；`library.db` / `cache` / `trash` 都落在**代码所在目录**
+- 仓库不带索引库和缩略图。想把索引一起搬过去，单独拷 `library.db`（app.py 版本要一致）
+- 依赖只有三个：Flask / Pillow / pypinyin（缺 `pypinyin` 只是拼音搜索失效，不会报错）
+- `root` 指错或目录不存在时，界面是空的、扫描也扫不到东西 —— 先改 `config.json`
+- 私有仓库要先登录（`gh auth login` 或配好 SSH key）；国内 SSH 22 口时通时断，clone 失败直接重试，或改用 HTTPS
+
+
 ## 新文件流程（放哪？）
 
 1. **拖进页面**：点右上角「上传到未处理」，或直接把图片拖进上传弹窗 → 自动存入根目录的 `未处理` 文件夹。
