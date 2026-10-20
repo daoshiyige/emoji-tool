@@ -419,6 +419,14 @@ input:focus, select:focus { border-color: var(--accent); }
 .dupe-wordval { color: var(--txt); font-weight: 600; }
 .dupe-warn { font-size: 11px; color: var(--yellow); }
 
+/* 静默检测条 */
+.batch-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); font-size: 12px; color: var(--mut); }
+.batch-bar.on { border-color: rgba(59,130,246,.35); background: var(--accent-soft); }
+.batch-info { flex: 1 1 300px; }
+.batch-info b { color: var(--txt); }
+.batch-track { width: 150px; height: 6px; border-radius: 3px; background: var(--panel3); overflow: hidden; }
+.batch-track i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+
 /* 勾选 → 两两比对 */
 .dupe-item { position: relative; }
 .dupe-pick { position: absolute; top: 6px; left: 6px; z-index: 2; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.92); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
@@ -453,10 +461,16 @@ input:focus, select:focus { border-color: var(--accent); }
 .cmp-file.cur { color: #fff; }
 .cmp-file.cur .cmp-dim { color: #cbd5e1; }
 .cmp-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.cmp-ctl select { padding: 3px 6px; font-size: 12px; }
 .cmp-hint { font-size: 11px; color: #64748b; }
 /* 深色底上的控件 */
 .cmp .btn { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.18); color: #e5e7eb; }
 .cmp .btn:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.34); color: #fff; }
-.cmp select { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.18); color: #e5e7eb; }
-.cmp select option { background: #1e293b; color: #e5e7eb; }
+/* 按住看 B 的大按钮 */
+.cmp-hold { padding: 9px 24px; font-size: 13px; font-weight: 700; border-radius: 9px; cursor: pointer; user-select: none; touch-action: none; border: 1px solid rgba(245,158,11,.55); background: rgba(245,158,11,.16); color: #fbbf24; transition: background .08s, color .08s; }
+.cmp-hold:hover { background: rgba(245,158,11,.3); }
+.cmp-hold.holding { background: #f59e0b; border-color: #fbbf24; color: #1F2937; }
+.cmp-hold:disabled { opacity: .35; cursor: not-allowed; }
+.cmp-now { font-size: 12px; color: #94a3b8; padding: 2px 9px; border-radius: 9px; background: rgba(255,255,255,.07); }
+.cmp-now.a { color: #60a5fa; }
+.cmp-now.b { color: #fbbf24; }
+.cmp-now.diff { color: #f59e0b; }

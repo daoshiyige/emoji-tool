@@ -35,3 +35,6 @@ ml/_raw.txt
 ml/index.txt
 ml/whiten.bin
 ml/proto.json
+ml/dupe_batch.json
+ml/dupe_batch.stop
+ml/dupes_batch.log

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>表情库 · 本地整理</title>
   <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css?v=34">
+<link rel="stylesheet" href="/static/style.css?v=35">
 </head>
 <body>
 <header class="topbar">
@@ -164,6 +164,7 @@
 <div class="cmp" id="cmp" hidden>
   <div class="cmp-top">
     <span class="cmp-title" id="cmp-title"></span>
+    <span class="cmp-now" id="cmp-now">当前：A</span>
     <button class="vw-close" id="cmp-close" title="关闭 (Esc)">✕</button>
   </div>
   <div class="cmp-stage" id="cmp-stage">
@@ -174,19 +175,13 @@
     </div>
   </div>
   <div class="cmp-bar">
-    <div class="cmp-file" id="cmp-fa"></div>
+    <div class="cmp-file cur" id="cmp-fa"></div>
     <div class="cmp-file" id="cmp-fb"></div>
     <div class="cmp-ctl">
-      <button class="btn ghost small" id="cmp-play">⏸ 暂停</button>
-      <select id="cmp-speed" title="闪烁间隔">
-        <option value="120">极快 0.12s</option>
-        <option value="200">快 0.2s</option>
-        <option value="400" selected>中 0.4s</option>
-        <option value="800">慢 0.8s</option>
-      </select>
+      <button class="cmp-hold" id="cmp-hold">按住看 B ｜ 松开回 A</button>
       <button class="btn ghost small" id="cmp-mode">差异叠加</button>
       <button class="btn ghost small" id="cmp-swap">交换 A/B</button>
-      <span class="cmp-hint">空格 暂停/播放 · 1 只显A · 2 只显B · Esc 关闭</span>
+      <span class="cmp-hint">按住按钮或空格显示 B · 1 / 2 固定单看 · Esc 关闭</span>
     </div>
   </div>
 </div>
@@ -308,6 +303,6 @@
   <div class="scanbar-track"><i id="scan-fill"></i></div>
 </div>
 
-<script src="/static/app.js?v=37"></script>
+<script src="/static/app.js?v=38"></script>
 </body>
 </html>

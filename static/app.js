@@ -509,6 +509,7 @@ function renderFtrList(menu, key, mapKey) {
 /* ================= 视图切换 ================= */
 function setView(view) {
   state.view = view;
+  if (view !== "dupes") stopBatchPoll();
   clearSelection(true);
   closeInspector();
   document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.nav === view));
@@ -605,6 +606,7 @@ async function loadFacets() {
 }
 
 async function loadFiles(reset) {
+  if (state.view !== "all" && state.view !== "untagged") return; // 非库视图不加载，也不清空 #grid
   if (!reset && state.loading) return;
   const seq = ++state.loadSeq;
   state.loading = true;
@@ -1894,6 +1896,10 @@ async function renderDupes() {
 
 async function renderDupeChars() {
   const grid = $("grid");
+  // 直接调用（批量跑完自动刷新）时也要保证单列布局，否则会掉回卡片网格的多列
+  grid.style.gridTemplateColumns = "1fr";
+  $("sentinel").hidden = true;
+  $("empty").hidden = true;
   let data;
   try { data = await api("/api/dupe/chars"); } catch (e) { toast(e.message, "error"); return; }
   const o = dupeOpts();
@@ -1911,6 +1917,12 @@ async function renderDupeChars() {
         <input id="dupe-words" type="text" value="${esc(o.words)}" placeholder="差分" autocomplete="off" spellcheck="false">
       </label>
       <span class="dupe-warn" id="dupe-warn" hidden>改动需重测生效</span>
+    </div>
+    <div class="batch-bar" id="dupe-batch">
+      <button class="btn small dupe-batch-start">静默检测全部</button>
+      <span class="batch-info"></span>
+      <div class="batch-track"><i></i></div>
+      <button class="btn ghost small dupe-batch-stop" hidden>停止</button>
     </div>
     <div class="dupe-list">
       ${data.items.map((it) => `
@@ -1945,6 +1957,89 @@ async function renderDupeChars() {
     if (openBtn) openBtn.addEventListener("click", () => { state.dupe.char = ch; renderDupes(); });
     row.querySelector(".dupe-scan").addEventListener("click", () => dupeScan(ch));
   });
+
+  renderBatch(data.batch || {});
+  $("dupe-batch").querySelector(".dupe-batch-start").addEventListener("click", dupeBatchStart);
+  $("dupe-batch").querySelector(".dupe-batch-stop").addEventListener("click", dupeBatchStop);
+  if ((data.batch || {}).running) {
+    batchWasRunning = true;
+    if (!batchPoll) batchPoll = setInterval(refreshBatch, 2000);
+  }
+}
+
+/* ---- 静默检测（全库 · 后台低优先级） ---- */
+let batchPoll = 0;
+let batchWasRunning = false;
+
+function stopBatchPoll() { if (batchPoll) clearInterval(batchPoll); batchPoll = 0; }
+
+function renderBatch(b) {
+  const box = $("dupe-batch");
+  if (!box) return;
+  b = b || {};
+  const running = !!b.running;
+  const total = b.total || 0, done = b.done || 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  box.classList.toggle("on", running);
+
+  let info;
+  if (running) {
+    info = `<b>${done}/${total || "?"}</b> · 正在 ${esc(b.char || "准备…")}` +
+      ` · 已发现 ${fmtCount(b.groups || 0)} 组` + (b.skipped ? ` · 跳过 ${b.skipped} 个无变化` : "");
+  } else if (b.phase === "done" || b.phase === "stopped") {
+    info = `上次静默检测：${b.done || 0} 个角色 · ${fmtCount(b.groups || 0)} 组` +
+      (b.skipped ? ` · 跳过 ${b.skipped} 个无变化` : "") +
+      (b.elapsed ? ` · ${Math.max(1, Math.round(b.elapsed / 60))} 分钟` : "") +
+      (b.stopped ? "（手动停止）" : "") + (b.error ? ` · ${esc(b.error)}` : "");
+  } else if (b.phase === "error") {
+    info = `上次出错：${esc(b.error || "未知")}`;
+  } else {
+    info = "后台按角色逐个补测，只跑新增/有改动的角色；IDLE 优先级，不挡浏览";
+  }
+  box.querySelector(".batch-info").innerHTML = info;
+  box.querySelector(".batch-track i").style.width = (running ? Math.max(3, pct) : (total ? 100 : 0)) + "%";
+  const start = box.querySelector(".dupe-batch-start");
+  start.disabled = running;
+  start.textContent = running ? "静默检测中…" : (b.done || b.phase === "done" ? "再补测一轮" : "静默检测全部");
+  box.querySelector(".dupe-batch-stop").hidden = !running;
+}
+
+async function dupeBatchStart() {
+  const o = dupeOpts();
+  try {
+    await api("/api/dupe/batch", { method: "POST", body: JSON.stringify({ th: o.th, cos: o.cos, words: o.words }) });
+  } catch (e) { toast(e.message, "error"); return; }
+  toast("静默检测已启动，可以去干别的");
+  batchWasRunning = true;
+  if (!batchPoll) batchPoll = setInterval(refreshBatch, 2000);
+  refreshBatch();
+}
+
+async function dupeBatchStop() {
+  try {
+    await api("/api/dupe/batch/stop", { method: "POST", body: JSON.stringify({}) });
+    toast("已请求停止，当前角色跑完就退出");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function refreshBatch() {
+  let st = null;
+  try { st = (await api("/api/dupe/batch/status")).batch; } catch (e) { return; }
+  if (!st) return;
+  if ($("dupe-batch")) renderBatch(st);
+  if (st.running) {
+    batchWasRunning = true;
+    if (!batchPoll) batchPoll = setInterval(refreshBatch, 2000);
+    if ($("nav-dupes")) $("nav-dupes").textContent = "…";
+  } else {
+    stopBatchPoll();
+    const was = batchWasRunning;
+    batchWasRunning = false;
+    if (was && state.view === "dupes" && !state.dupe.char) {
+      toast("静默检测完成");
+      renderDupeChars();
+    }
+  }
 }
 
 async function dupeScan(char) {
@@ -1967,6 +2062,9 @@ async function dupeScan(char) {
 
 async function renderDupeGroups(char) {
   const grid = $("grid");
+  grid.style.gridTemplateColumns = "1fr";
+  $("sentinel").hidden = true;
+  $("empty").hidden = true;
   let data;
   try { data = await api("/api/dupe?char=" + encodeURIComponent(char)); } catch (e) { toast(e.message, "error"); return; }
   const groups = data.groups || [];
@@ -2101,8 +2199,8 @@ async function renderDupeGroups(char) {
   });
 }
 
-/* ---- 两两闪烁比对 ---- */
-const CMP = { a: "", b: "", files: {}, playing: true, onA: true, speed: 400, mode: "blink", timer: 0 };
+/* ---- 两两闪烁比对（按住看 B，松开回 A —— 同参考工具的 Blink Compare） ---- */
+const CMP = { a: "", b: "", files: {}, side: "a", mode: "blink" };
 
 function cmpFit() {
   const stage = $("cmp-stage");
@@ -2122,28 +2220,32 @@ function cmpFit() {
 function cmpPaint() {
   const diff = CMP.mode === "diff";
   $("cmp-frame").classList.toggle("diff", diff);
-  $("cmp-a").classList.toggle("on", diff || CMP.onA);
-  $("cmp-b").classList.toggle("on", diff || !CMP.onA);
+  $("cmp-a").classList.toggle("on", diff || CMP.side === "a");
+  $("cmp-b").classList.toggle("on", diff || CMP.side === "b");
   const tag = $("cmp-tag");
-  tag.className = "cmp-tag " + (diff ? "diff" : (CMP.onA ? "a" : "b"));
-  tag.textContent = diff ? "差异 |A−B|" : (CMP.onA ? "A" : "B");
-  $("cmp-fa").classList.toggle("cur", diff || CMP.onA);
-  $("cmp-fb").classList.toggle("cur", diff || !CMP.onA);
+  tag.className = "cmp-tag " + (diff ? "diff" : CMP.side);
+  tag.textContent = diff ? "差异 |A−B|" : CMP.side.toUpperCase();
+  $("cmp-fa").classList.toggle("cur", diff || CMP.side === "a");
+  $("cmp-fb").classList.toggle("cur", diff || CMP.side === "b");
+  $("cmp-now").textContent = diff ? "当前：差异叠图" : (CMP.side === "a" ? "当前：A" : "当前：B");
+  $("cmp-now").className = "cmp-now " + (diff ? "diff" : CMP.side);
+  $("cmp-hold").disabled = diff;
+  $("cmp-hold").classList.toggle("holding", !diff && CMP.side === "b");
+  $("cmp-hold").textContent = diff ? "差异模式下不可按住" : "按住看 B ｜ 松开回 A";
 }
 
-function cmpRun() {
-  if (CMP.timer) clearInterval(CMP.timer);
-  CMP.timer = 0;
-  if (!CMP.playing || CMP.mode !== "blink") return;
-  CMP.timer = setInterval(() => { CMP.onA = !CMP.onA; cmpPaint(); }, CMP.speed);
+function cmpShow(side) {
+  if ($("cmp").hidden || CMP.mode === "diff") return;
+  if (CMP.side === side) return;
+  CMP.side = side;
+  cmpPaint();
 }
 
 function openCmp(ra, rb, files) {
   const fb0 = (files && files[ra]) || { rel: ra, name: ra.split("/").pop(), size: 0, mtime: 0 };
   const fb1 = (files && files[rb]) || { rel: rb, name: rb.split("/").pop(), size: 0, mtime: 0 };
   CMP.a = ra; CMP.b = rb; CMP.files = files || {};
-  CMP.onA = true; CMP.playing = true; CMP.mode = "blink";
-  CMP.speed = Number($("cmp-speed").value) || 400;
+  CMP.side = "a"; CMP.mode = "blink";
 
   $("cmp-title").textContent = `闪烁比对 · ${fb0.name} ↔ ${fb1.name}`;
   $("cmp-fa").innerHTML = `<b>A</b><span title="${esc(fb0.rel)}">${esc(fb0.name)}</span><em>${dupeSize(fb0.size)}</em><i class="cmp-dim" id="cmp-da"></i>`;
@@ -2164,44 +2266,26 @@ function openCmp(ra, rb, files) {
   ib.src = fileUrl(rb, fb1.mtime);
 
   $("cmp").hidden = false;
-  $("cmp-play").textContent = "⏸ 暂停";
   $("cmp-mode").textContent = "差异叠加";
   cmpPaint();
-  cmpRun();
   cmpFit();
   requestAnimationFrame(cmpFit);
 }
 
 function closeCmp() {
-  if (CMP.timer) clearInterval(CMP.timer);
-  CMP.timer = 0;
   $("cmp").hidden = true;
   $("cmp-a").src = "";
   $("cmp-b").src = "";
 }
 
-function cmpPlay() {
-  CMP.playing = !CMP.playing;
-  $("cmp-play").textContent = CMP.playing ? "⏸ 暂停" : "▶ 播放";
-  cmpRun();
-}
-
 function cmpSetMode() {
   CMP.mode = CMP.mode === "diff" ? "blink" : "diff";
-  $("cmp-mode").textContent = CMP.mode === "diff" ? "回到闪烁" : "差异叠加";
+  if (CMP.mode === "diff") CMP.side = "a";
+  $("cmp-mode").textContent = CMP.mode === "diff" ? "回到单图" : "差异叠加";
   cmpPaint();
-  cmpRun();
 }
 
 function cmpSwap() { openCmp(CMP.b, CMP.a, CMP.files); }
-
-function cmpSelect(which) {
-  CMP.playing = false;
-  $("cmp-play").textContent = "▶ 播放";
-  cmpRun();
-  CMP.onA = which === "a";
-  cmpPaint();
-}
 
 function refreshTrash() { if (state.view === "trash") renderTrash(); }
 
@@ -2756,14 +2840,19 @@ function bindEvents() {
     if (e.target.id === "vw-name" && state.current) { e.stopPropagation(); inlineRename(e.target, state.current.rel); }
   });
   $("cmp-close").addEventListener("click", closeCmp);
-  $("cmp-play").addEventListener("click", cmpPlay);
   $("cmp-mode").addEventListener("click", cmpSetMode);
   $("cmp-swap").addEventListener("click", cmpSwap);
-  $("cmp-stage").addEventListener("click", (e) => { if (!e.target.closest("button")) cmpPlay(); });
-  $("cmp-speed").addEventListener("change", () => {
-    CMP.speed = Number($("cmp-speed").value) || 400;
-    if (CMP.playing && CMP.mode === "blink") cmpRun();
-  });
+  const hold = $("cmp-hold");
+  const holdOn = (e) => { e.preventDefault(); cmpShow("b"); };
+  const holdOff = () => cmpShow("a");
+  hold.addEventListener("pointerdown", holdOn);
+  hold.addEventListener("pointerup", holdOff);
+  hold.addEventListener("pointerleave", holdOff);
+  hold.addEventListener("pointercancel", holdOff);
+  // 在按钮外松手也要回 A（拖出按钮后 pointerup 不会回到按钮上）
+  window.addEventListener("pointerup", holdOff);
+  window.addEventListener("blur", holdOff);
+  document.addEventListener("keyup", (e) => { if (e.key === " ") holdOff(); });
   window.addEventListener("resize", () => { if (!$("cmp").hidden) cmpFit(); });
   $("btn-trash-file").addEventListener("click", () => doTrash(state.current));
   const btnPlace = $("btn-place-file");
@@ -2867,9 +2956,9 @@ function bindEvents() {
       $("drawer").hidden = true;
     }
     if (!$("cmp").hidden) {
-      if (e.key === " ") { e.preventDefault(); cmpPlay(); return; }
-      if (e.key === "1") { cmpSelect("a"); return; }
-      if (e.key === "2") { cmpSelect("b"); return; }
+      if (e.key === " ") { e.preventDefault(); if (!e.repeat) cmpShow("b"); return; }
+      if (e.key === "1") { cmpShow("a"); return; }
+      if (e.key === "2") { cmpShow("b"); return; }
     }
     if (!$("viewer").hidden) {
       if (e.key === "ArrowLeft") vwNav(-1);

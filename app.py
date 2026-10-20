@@ -2658,6 +2658,10 @@ def artist_suffix_name(name, artist):
 # ---------------------------------------------------------------- 相似图检测（手动 · 单角色）
 DUPE_JSON = ML_DIR / "dupes.json"
 DUPE_SKIP = ML_DIR / "dup_skip.json"
+BATCH_STATE = ML_DIR / "dupe_batch.json"
+BATCH_STOP = ML_DIR / "dupe_batch.stop"
+_BATCH_JOB = {"proc": None, "started": 0.0}
+_BATCH_LOCK = threading.Lock()
 _DUPE = {"key": None, "data": {}}
 _DUPE_JOB = {"proc": None, "char": "", "started": 0.0}
 _DUPE_LOCK = threading.Lock()
@@ -2687,6 +2691,35 @@ def _dupe_skips():
 def _dupe_running():
     pr = _DUPE_JOB.get("proc")
     return pr is not None and pr.poll() is None
+
+
+def _batch_state():
+    """读静默检测进度。running 以子进程为准；Flask 重启过（proc 丢了）就看状态文件是否还新鲜。
+    脚本每 20 秒 touch 一次状态文件当心跳，所以 10 分钟没动静就当它已经没了。"""
+    try:
+        st = json.loads(BATCH_STATE.read_text(encoding="utf-8"))
+    except Exception:
+        st = {}
+    pr = _BATCH_JOB.get("proc")
+    if pr is not None:
+        alive = pr.poll() is None
+    else:
+        try:
+            fresh = time.time() - BATCH_STATE.stat().st_mtime < 600
+        except Exception:
+            fresh = False
+        alive = bool(st.get("running")) and fresh
+    st["running"] = bool(alive)
+    st["owned"] = pr is not None
+    return st
+
+
+def _batch_busy():
+    pr = _BATCH_JOB.get("proc")
+    if pr is not None and pr.poll() is None:
+        return True
+    st = _batch_state()
+    return bool(st.get("running")) and not st.get("owned")
 
 
 def _char_of(folder):
@@ -2731,7 +2764,8 @@ def api_dupe_chars():
         a["exact"] = sum(1 for g in groups if g.get("exact"))
         a["built_at"] = block.get("built_at") or ""
     out = sorted(agg.values(), key=lambda x: (-x["groups"], -x["files"]))
-    return jsonify({"ok": True, "items": out, "running": _dupe_running(), "job": _DUPE_JOB.get("char", "")})
+    return jsonify({"ok": True, "items": out, "running": _dupe_running(), "job": _DUPE_JOB.get("char", ""),
+                    "batch": _batch_state()})
 
 
 @app.post("/api/dupe/scan")
@@ -2742,6 +2776,8 @@ def api_dupe_scan():
         return jsonify({"ok": False, "error": "角色名不合法"}), 400
     if _dupe_running():
         return jsonify({"ok": False, "error": "已有检测在跑：%s" % _DUPE_JOB.get("char", "")}), 409
+    if _batch_busy():
+        return jsonify({"ok": False, "error": "全库静默检测进行中，等它跑完或先「停止」再单测"}), 409
     py = _ml_python()
     script = ML_DIR / "dupes.py"
     if not py or not script.exists():
@@ -2841,6 +2877,64 @@ def api_dupe_skip():
         tmp.write_text(json.dumps(skips, ensure_ascii=False), encoding="utf-8")
         tmp.replace(DUPE_SKIP)
     return jsonify({"ok": True, "skipped": len(lst)})
+
+
+@app.post("/api/dupe/batch")
+def api_dupe_batch():
+    """全库静默检测：后台低优先级逐个角色跑，只补有变化的。"""
+    data = request.get_json(force=True) or {}
+    if _batch_busy():
+        return jsonify({"ok": False, "error": "已有静默检测在跑"}), 409
+    if _dupe_running():
+        return jsonify({"ok": False, "error": "单角色检测进行中：%s" % _DUPE_JOB.get("char", "")}), 409
+    py = _ml_python()
+    script = ML_DIR / "dupes_batch.py"
+    if not py or not script.exists():
+        return jsonify({"ok": False, "error": "未配置 ml_python 或缺少 ml/dupes_batch.py"}), 400
+    args = [py, str(script)]
+    args += ["--th", str(max(2, min(int(data.get("th") or CONFIG.get("dupe_threshold", 8)), 20)))]
+    try:
+        args += ["--cos", str(max(0.5, min(float(data.get("cos") or CONFIG.get("dupe_cos", 0.85)), 0.99)))]
+    except (TypeError, ValueError):
+        args += ["--cos", "0.85"]
+    args += ["--skip-words", _dupe_words(data.get("words"))]
+    if data.get("all"):
+        args.append("--all")
+    try:
+        lim = int(data.get("limit") or 0)
+        if lim > 0:
+            args += ["--limit", str(min(lim, 500))]
+    except (TypeError, ValueError):
+        pass
+    try:
+        if BATCH_STOP.exists():
+            BATCH_STOP.unlink()
+        log = open(str(ML_DIR / "dupes_batch.log"), "ab")
+        flags = 0x08000000 if os.name == "nt" else 0
+        with _BATCH_LOCK:
+            _BATCH_JOB["proc"] = subprocess.Popen(
+                args, cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+                stdout=log, stderr=log, creationflags=flags,
+            )
+            _BATCH_JOB["started"] = time.time()
+        return jsonify({"ok": True, "running": True, "args": args[2:]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.post("/api/dupe/batch/stop")
+def api_dupe_batch_stop():
+    """置停止标记（脚本每处理完一个角色检查一次），温和退出。"""
+    try:
+        BATCH_STOP.write_text(str(time.time()), encoding="utf-8")
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "stopping": True})
+
+
+@app.get("/api/dupe/batch/status")
+def api_dupe_batch_status():
+    return jsonify({"ok": True, "batch": _batch_state()})
 
 
 @app.get("/api/inbox")

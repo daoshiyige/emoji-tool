@@ -175,13 +175,36 @@ def hits(rel, words):
     return any(w in s for w in words)
 
 
-def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",)):
-    files = [f for f in load_files(char)]
-    words = [w.lower() for w in (skip_words or []) if w]
-    if len(files) < 2:
-        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files), "skip_words": words}
+def file_sig(files, th, cos_th, words):
+    """签名 = 文件集合 + 检测参数。只有它变了才值得重跑（静默检测用它跳过）。"""
+    if not files:
+        return {"n": 0, "mt": 0, "th": th, "cos": cos_th, "w": "|".join(words)}
+    return {
+        "n": len(files),
+        "mt": int(max(f["mtime"] for f in files)),
+        "th": th, "cos": cos_th, "w": "|".join(words),
+    }
 
-    cache = load_json(PHASH_JSON, {})
+
+def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",),
+              files=None, cache=None, clip=None, save_cache=True, quiet=False):
+    """扫一个角色。
+
+    files / cache / clip 可由批量入口预先加载后传进来，省掉反复读库、读 JSON、读向量；
+    save_cache=False 时哈希缓存不落盘（批量跑完统一写，避免每个角色都写几 MB）。
+    """
+    files = list(files) if files is not None else [f for f in load_files(char)]
+    words = [w.lower() for w in (skip_words or []) if w]
+    sig = file_sig(files, th, cos_th, words)
+
+    def empty():
+        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"),
+                "th": th, "cos": cos_th, "files": len(files), "skip_words": words, "sig": sig}
+
+    if len(files) < 2:
+        return empty()
+
+    cache = cache if cache is not None else load_json(PHASH_JSON, {})
     need = [f for f in files if not (cache.get(f["rel"]) and cache[f["rel"]][1] == f["mtime"])]
     t0 = time.time()
     if need:
@@ -192,14 +215,16 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",)):
             for rel, h, mt, sz in ex.map(one, need):
                 if h is not None:
                     cache[rel] = [h, mt, sz]
-        save_json(PHASH_JSON, cache)
-        print("  新增/更新哈希 %d 张，用时 %.1f 秒" % (len(need), time.time() - t0), flush=True)
+        if save_cache:
+            save_json(PHASH_JSON, cache)
+        if not quiet:
+            print("  新增/更新哈希 %d 张，用时 %.1f 秒" % (len(need), time.time() - t0), flush=True)
 
     items = [(f["rel"], cache[f["rel"]][0]) for f in files if f["rel"] in cache]
     if len(items) < 2:
-        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files), "skip_words": words}
+        return empty()
 
-    row_of, Z = load_clip()
+    row_of, Z = clip if clip else load_clip()
     rels = [r for r, _ in items]
     arr = np.array([h for _, h in items], dtype=np.uint64)
     if row_of is not None:
@@ -300,7 +325,7 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",)):
 
     return {
         "char": char, "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th,
-        "files": len(files), "skip_words": words, "groups": groups,
+        "files": len(files), "skip_words": words, "groups": groups, "sig": sig,
     }
 
 
