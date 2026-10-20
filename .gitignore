@@ -27,6 +27,9 @@ _fullscan.py
 # ===== ML 索引（体积大，可由 ml/embed.py 重建） =====
 ml/models/
 ml/vectors.bin
+ml/phash.json
+ml/dupes.json
+ml/dup_skip.json
 ml/_raw.bin
 ml/_raw.txt
 ml/index.txt

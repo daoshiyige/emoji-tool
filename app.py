@@ -2655,6 +2655,176 @@ def artist_suffix_name(name, artist):
 
 
 # ---------------------------------------------------------------- 未处理收件箱 / 上传 / 归位
+# ---------------------------------------------------------------- 相似图检测（手动 · 单角色）
+DUPE_JSON = ML_DIR / "dupes.json"
+DUPE_SKIP = ML_DIR / "dup_skip.json"
+_DUPE = {"key": None, "data": {}}
+_DUPE_JOB = {"proc": None, "char": "", "started": 0.0}
+_DUPE_LOCK = threading.Lock()
+
+
+def _dupe_data():
+    try:
+        if not DUPE_JSON.exists():
+            return {}
+        key = DUPE_JSON.stat().st_mtime_ns
+        with _DUPE_LOCK:
+            if _DUPE["key"] != key:
+                _DUPE["data"] = json.loads(DUPE_JSON.read_text(encoding="utf-8"))
+                _DUPE["key"] = key
+            return _DUPE["data"]
+    except Exception:
+        return {}
+
+
+def _dupe_skips():
+    try:
+        return json.loads(DUPE_SKIP.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _dupe_running():
+    pr = _DUPE_JOB.get("proc")
+    return pr is not None and pr.poll() is None
+
+
+def _char_of(folder):
+    parts = (folder or "").split("/")
+    return "/".join(parts[:2]) if len(parts) >= 2 else (folder or "")
+
+
+@app.get("/api/dupe/chars")
+def api_dupe_chars():
+    """角色列表：文件数 + 已算出的组数（未忽略的）。"""
+    rows = query("SELECT folder, COUNT(*) c FROM files WHERE status='normal' GROUP BY folder")
+    agg = {}
+    for r in rows:
+        k = _char_of(r["folder"])
+        if not k or k == "未处理":
+            continue
+        a = agg.setdefault(k, {"char": k, "files": 0, "groups": 0, "exact": 0, "built_at": ""})
+        a["files"] += r["c"]
+    data = _dupe_data()
+    skips = _dupe_skips()
+    for k, a in agg.items():
+        block = data.get(k) or {}
+        skip = set(skips.get(k) or [])
+        groups = [g for g in (block.get("groups") or []) if g.get("id") not in skip]
+        a["groups"] = len(groups)
+        a["exact"] = sum(1 for g in groups if g.get("exact"))
+        a["built_at"] = block.get("built_at") or ""
+    out = sorted(agg.values(), key=lambda x: (-x["groups"], -x["files"]))
+    return jsonify({"ok": True, "items": out, "running": _dupe_running(), "job": _DUPE_JOB.get("char", "")})
+
+
+@app.post("/api/dupe/scan")
+def api_dupe_scan():
+    data = request.get_json(force=True) or {}
+    ch = (data.get("char") or "").strip()
+    if not ch or _char_of(ch) != ch:
+        return jsonify({"ok": False, "error": "角色名不合法"}), 400
+    if _dupe_running():
+        return jsonify({"ok": False, "error": "已有检测在跑：%s" % _DUPE_JOB.get("char", "")}), 409
+    py = _ml_python()
+    script = ML_DIR / "dupes.py"
+    if not py or not script.exists():
+        return jsonify({"ok": False, "error": "未配置 ml_python 或缺少 ml/dupes.py"}), 400
+    try:
+        args = [py, str(script), "--char", ch]
+        try:
+            th = int(data.get("th") or CONFIG.get("dupe_threshold", 8))
+            args += ["--th", str(max(2, min(th, 20)))]
+        except (TypeError, ValueError):
+            args += ["--th", "8"]
+        try:
+            cos = float(data.get("cos") or CONFIG.get("dupe_cos", 0.85))
+            args += ["--cos", str(max(0.5, min(cos, 0.99)))]
+        except (TypeError, ValueError):
+            args += ["--cos", "0.85"]
+        env = os.environ.copy()
+        env["DUPE_WORKERS"] = "4"
+        log = open(str(ML_DIR / "dupes.log"), "ab")
+        flags = 0x08000000 if os.name == "nt" else 0
+        _DUPE_JOB["proc"] = subprocess.Popen(
+            args, cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+            stdout=log, stderr=log, env=env, creationflags=flags,
+        )
+        _DUPE_JOB["char"] = ch
+        _DUPE_JOB["started"] = time.time()
+        return jsonify({"ok": True, "char": ch, "running": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.get("/api/dupe/status")
+def api_dupe_status():
+    return jsonify({"ok": True, "running": _dupe_running(), "char": _DUPE_JOB.get("char", "")})
+
+
+@app.get("/api/dupe")
+def api_dupe_list():
+    ch = request.args.get("char", "").strip()
+    block = (_dupe_data().get(ch) or {})
+    skip = set((_dupe_skips().get(ch) or []))
+    groups = [g for g in (block.get("groups") or []) if g.get("id") not in skip]
+    rels = []
+    for g in groups:
+        rels.extend(g.get("files") or [])
+    info = {}
+    if rels:
+        marks = ",".join("?" * len(rels))
+        for r in query("SELECT rel, name, size, mtime, folder FROM files WHERE status='normal' AND rel IN (%s)" % marks, rels):
+            info[r["rel"]] = {"name": r["name"], "size": r["size"], "mtime": r["mtime"], "folder": r["folder"]}
+    out = []
+    for g in groups:
+        files = []
+        # 已经被删/移走的文件不再参与，剩不到 2 张的组直接丢掉
+        for r in [x for x in (g.get("files") or []) if x in info]:
+            it = info.get(r) or {}
+            files.append({
+                "rel": r,
+                "name": it.get("name") or r.rsplit("/", 1)[-1],
+                "size": it.get("size") or 0,
+                "mtime": it.get("mtime") or 0,
+                "folder": it.get("folder") or "",
+            })
+        if len(files) < 2:
+            continue
+        pairs = g.get("pairs") or []
+        out.append({
+            "id": g.get("id"),
+            "files": files,
+            "exact": bool(g.get("exact")),
+            "min_d": g.get("min_d"),
+            "max_cos": g.get("max_cos"),
+            "min_similarity": (round(1 - (g.get("min_d") or 0) / 64.0, 3)),
+            "pairs": len(pairs),
+        })
+    return jsonify({
+        "ok": True, "char": ch, "built_at": block.get("built_at") or "",
+        "th": block.get("th"), "cos": block.get("cos"), "files": block.get("files") or 0,
+        "groups": out,
+    })
+
+
+@app.post("/api/dupe/skip")
+def api_dupe_skip():
+    data = request.get_json(force=True) or {}
+    ch = (data.get("char") or "").strip()
+    gid = (data.get("id") or "").strip()
+    if not ch or not gid:
+        return jsonify({"ok": False, "error": "参数不全"}), 400
+    skips = _dupe_skips()
+    lst = skips.setdefault(ch, [])
+    if gid not in lst:
+        lst.append(gid)
+        tmp = DUPE_SKIP.with_suffix(".tmp")
+        tmp.write_text(json.dumps(skips, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(DUPE_SKIP)
+    return jsonify({"ok": True, "skipped": len(lst)})
+
+
 @app.get("/api/inbox")
 def api_inbox():
     items = []

@@ -381,3 +381,35 @@ input:focus, select:focus { border-color: var(--accent); }
 .sug-row.sug-low .sug-chip { opacity: .62; border-style: dotted; }
 .sug-row.sug-low .sug-chip:hover { opacity: 1; }
 .sug-wait { font-size: 11px; color: var(--mut2); }
+
+/* ============ 相似图 ============ */
+.dupe-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.dupe-bar .dupe-hint { font-size: 12px; color: var(--mut); flex: 1 1 260px; }
+.dupe-opt { font-size: 12px; color: var(--mut); display: inline-flex; align-items: center; gap: 6px; }
+.dupe-opt select { padding: 3px 6px; font-size: 12px; }
+
+.dupe-list { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.dupe-row { display: grid; grid-template-columns: 1fr 90px 1fr 150px auto; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.dupe-row:last-child { border-bottom: none; }
+.dupe-row:hover { background: var(--panel2); }
+.dupe-row.has .dupe-grp { color: var(--red); font-weight: 600; }
+.dupe-char { font-weight: 600; }
+.dupe-num, .dupe-time { color: var(--mut); font-size: 12px; }
+.dupe-grp { color: var(--mut); font-size: 12px; }
+.dupe-acts { display: flex; gap: 6px; justify-content: flex-end; }
+
+.dupe-group { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 10px 12px; }
+.dupe-ghead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.dupe-badge { font-size: 11px; padding: 1px 8px; border-radius: 9px; background: var(--panel3); color: var(--mut); }
+.dupe-badge.exact { background: rgba(239,68,68,.12); color: var(--red); font-weight: 600; }
+.dupe-gmeta { font-size: 12px; color: var(--mut); flex: 1; }
+.dupe-imgs { display: flex; flex-wrap: wrap; gap: 12px; }
+.dupe-item { margin: 0; width: 190px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+.dupe-thumb { display: block; height: 150px; background: var(--panel2); }
+.dupe-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.dupe-item figcaption { padding: 6px 8px 8px; }
+.dupe-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dupe-path { font-size: 11px; color: var(--mut2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dupe-size { font-size: 11px; color: var(--mut); margin: 2px 0 6px; }
+.dupe-ops { display: flex; gap: 6px; }
+.dupe-ops .btn { padding: 3px 8px; font-size: 12px; }

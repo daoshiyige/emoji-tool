@@ -14,6 +14,7 @@ const state = {
   lastFile: null,
   modalMode: "single", // single | batch | place
   inboxFiles: [], trashFiles: [],
+  dupe: { char: "", groups: [] },
   pendingTags: {}, // 未处理文件待打标：rel -> {characters, specials, artist}
   placingInbox: new Set(),
   pendingMove: new Set(), // 库视图已改标签、待取消选中后归位的文件
@@ -516,13 +517,15 @@ function setView(view) {
   $("btn-trash-clear").hidden = view !== "trash";
   $("trash-hint").hidden = view !== "trash";
   $("f-untagged").hidden = !isLibrary;
+  const untaggedLabel = $("f-untagged").closest("label");
+  if (untaggedLabel) untaggedLabel.hidden = !isLibrary;
   $("btn-organize").hidden = !isLibrary;
-  $("btn-select-all").hidden = false;
+  $("btn-select-all").hidden = view === "dupes";
   $("btn-batch-tags").hidden = !isLibrary;
-  $("btn-batch-trash").hidden = view === "trash";
+  $("btn-batch-trash").hidden = view === "trash" || view === "dupes";
   $("btn-batch-restore").hidden = view !== "trash";
   $("ftr-row").hidden = !isLibrary;
-  const titles = { all: "全部文件", untagged: "未标记", inbox: "未处理", trash: "废纸篓" };
+  const titles = { all: "全部文件", untagged: "未标记", inbox: "未处理", dupes: "相似图", trash: "废纸篓" };
   $("view-title").firstChild.textContent = titles[view];
   if (!isLibrary) { // 未处理/废纸篓不走筛选，侧栏回到全库计数
     facetsSeq++;
@@ -531,6 +534,7 @@ function setView(view) {
     updateNavCounts();
   }
   if (view === "inbox") { $("view-sub").textContent = "侧栏打标（可多选批量），取消选中/点击其他文件时自动归位"; renderInbox(); }
+  else if (view === "dupes") { $("view-sub").textContent = "同一角色内查重：手动检测一个角色，只给建议，删除走废纸篓"; renderDupes(); }
   else if (view === "trash") { $("view-sub").textContent = ""; renderTrash(); }
   else {
     state.filters.untagged = view === "untagged";
@@ -1858,6 +1862,198 @@ async function renderTrash() {
     }));
     $("empty").hidden = true;
   } catch (e) { toast(e.message, "error"); }
+}
+
+
+/* ================= 相似图（手动 · 单角色） ================= */
+const DUPE_OPTS_KEY = "emojiTool.dupeOpts.v1";
+
+function dupeOpts() {
+  try { return Object.assign({ th: 8, cos: 0.85 }, JSON.parse(localStorage.getItem(DUPE_OPTS_KEY) || "{}")); }
+  catch (e) { return { th: 8, cos: 0.85 }; }
+}
+function dupeSaveOpts(o) { try { localStorage.setItem(DUPE_OPTS_KEY, JSON.stringify(o)); } catch (e) {} }
+
+function dupeSize(n) {
+  if (!n) return "-";
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+  if (n >= 1024) return Math.round(n / 1024) + " KB";
+  return n + " B";
+}
+
+async function renderDupes() {
+  const grid = $("grid");
+  grid.style.gridTemplateColumns = "1fr";
+  $("sentinel").hidden = true;
+  $("empty").hidden = true;
+  if (state.dupe.char) return renderDupeGroups(state.dupe.char);
+  return renderDupeChars();
+}
+
+async function renderDupeChars() {
+  const grid = $("grid");
+  let data;
+  try { data = await api("/api/dupe/chars"); } catch (e) { toast(e.message, "error"); return; }
+  const o = dupeOpts();
+  const built = data.items.filter((x) => x.built_at).length;
+  const total = data.items.reduce((a, b) => a + b.groups, 0);
+  $("result-count").textContent = `${total} 组待处理 · 已检测 ${built}/${data.items.length} 个角色`;
+  $("nav-dupes").textContent = data.running ? "…" : (total ? fmtCount(total) : "");
+
+  grid.innerHTML = `
+    <div class="dupe-bar">
+      <span class="dupe-hint">只在同一个角色的文件之间比对，「差分」互比默认跳过；点「检测」现算这个角色。</span>
+      <label class="dupe-opt">阈值 <select id="dupe-th">${[4, 6, 8, 10, 12].map((v) => `<option value="${v}"${v === o.th ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="dupe-opt">相似度 ≥ <select id="dupe-cos">${[0.8, 0.85, 0.9, 0.95].map((v) => `<option value="${v}"${v === o.cos ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+    </div>
+    <div class="dupe-list">
+      ${data.items.map((it) => `
+        <div class="dupe-row${it.groups ? " has" : ""}" data-char="${esc(it.char)}">
+          <span class="dupe-char">${esc(it.char)}</span>
+          <span class="dupe-num">${fmtCount(it.files)} 张</span>
+          <span class="dupe-grp">${it.built_at ? (it.groups ? `${it.groups} 组${it.exact ? `（${it.exact} 组完全相同）` : ""}` : "无重复") : "未检测"}</span>
+          <span class="dupe-time">${esc(it.built_at || "")}</span>
+          <span class="dupe-acts">
+            ${it.built_at ? `<button class="btn ghost small dupe-open">查看</button>` : ""}
+            <button class="btn ${it.built_at ? "ghost" : "primary"} small dupe-scan">${it.built_at ? "重测" : "检测"}</button>
+          </span>
+        </div>`).join("")}
+    </div>`;
+
+  const readOpts = () => {
+    const opts = { th: Number($("dupe-th").value) || 8, cos: Number($("dupe-cos").value) || 0.85 };
+    dupeSaveOpts(opts);
+    return opts;
+  };
+  $("dupe-th").addEventListener("change", readOpts);
+  $("dupe-cos").addEventListener("change", readOpts);
+
+  grid.querySelectorAll(".dupe-row").forEach((row) => {
+    const ch = row.dataset.char;
+    const openBtn = row.querySelector(".dupe-open");
+    if (openBtn) openBtn.addEventListener("click", () => { state.dupe.char = ch; renderDupes(); });
+    row.querySelector(".dupe-scan").addEventListener("click", () => dupeScan(ch));
+  });
+}
+
+async function dupeScan(char) {
+  const o = dupeOpts();
+  try {
+    await api("/api/dupe/scan", { method: "POST", body: JSON.stringify({ char, th: o.th, cos: o.cos }) });
+  } catch (e) { toast(e.message, "error"); return; }
+  toast(`正在检测 ${char}…`);
+  $("nav-dupes").textContent = "…";
+  const timer = setInterval(async () => {
+    let st = null;
+    try { st = await api("/api/dupe/status"); } catch (e) { return; }
+    if (!st.running) {
+      clearInterval(timer);
+      if (state.view === "dupes") { if (state.dupe.char) renderDupes(); else renderDupeChars(); }
+      toast("检测完成");
+    }
+  }, 1500);
+}
+
+async function renderDupeGroups(char) {
+  const grid = $("grid");
+  let data;
+  try { data = await api("/api/dupe?char=" + encodeURIComponent(char)); } catch (e) { toast(e.message, "error"); return; }
+  const groups = data.groups || [];
+  state.dupe.groups = groups;
+  $("result-count").textContent = `${char} · ${fmtCount(data.files)} 张 · ${groups.length} 组（阈值 ${data.th ?? "-"}，相似度 ≥ ${data.cos ?? "-"}）`;
+  $("nav-dupes").textContent = groups.length ? fmtCount(groups.length) : "";
+
+  const head = `<div class="dupe-bar">
+      <button class="btn ghost small" id="dupe-back">← 返回角色</button>
+      <span class="dupe-hint">${esc(char)}${data.built_at ? " · 检测于 " + esc(data.built_at) : " · 还没检测"}</span>
+      <button class="btn ghost small" id="dupe-rescan">重新检测</button>
+    </div>`;
+
+  if (!groups.length) {
+    grid.innerHTML = head + `<div class="empty" style="grid-column:1/-1">没有发现相似组（换个阈值可以再试）</div>`;
+  } else {
+    grid.innerHTML = head + groups.map((g) => `
+      <div class="dupe-group" data-id="${esc(g.id)}">
+        <div class="dupe-ghead">
+          <span class="dupe-badge${g.exact ? " exact" : ""}">${g.exact ? "完全相同" : "相似"}</span>
+          <span class="dupe-gmeta">${g.files.length} 张 · 距离 ${g.min_d} · 相似度 ${(g.max_cos || 0).toFixed(3)}</span>
+          <button class="btn ghost small dupe-skip">忽略这组</button>
+        </div>
+        <div class="dupe-imgs">
+          ${g.files.map((f) => `
+            <figure class="dupe-item" data-rel="${esc(f.rel)}">
+              <a class="dupe-thumb" href="${fileUrl(f.rel, f.mtime)}" target="_blank" rel="noreferrer"><img loading="lazy" src="${thumbUrl(f.rel, f.mtime)}" alt=""></a>
+              <figcaption>
+                <div class="dupe-name" title="${esc(f.rel)}">${esc(f.name)}</div>
+                <div class="dupe-path">${esc(f.folder)}</div>
+                <div class="dupe-size">${dupeSize(f.size)}</div>
+                <div class="dupe-ops">
+                  <button class="btn small dupe-keep">保留这张</button>
+                  <button class="btn ghost small dupe-trash">废纸篓</button>
+                </div>
+              </figcaption>
+            </figure>`).join("")}
+        </div>
+      </div>`).join("");
+  }
+
+  $("dupe-back").addEventListener("click", () => { state.dupe.char = ""; renderDupes(); });
+  $("dupe-rescan").addEventListener("click", () => dupeScan(char));
+
+  const refreshCount = () => {
+    const left = grid.querySelectorAll(".dupe-group").length;
+    $("result-count").textContent = `${char} · ${fmtCount(data.files)} 张 · ${left} 组（阈值 ${data.th ?? "-"}，相似度 ≥ ${data.cos ?? "-"}）`;
+    $("nav-dupes").textContent = left ? fmtCount(left) : "";
+    if (!left) {
+      const box = document.createElement("div");
+      box.className = "empty";
+      box.style.gridColumn = "1/-1";
+      box.textContent = "这个角色的相似组都处理完了";
+      grid.appendChild(box);
+    }
+  };
+
+  const dropGroup = (el) => { el.remove(); refreshCount(); };
+
+  grid.querySelectorAll(".dupe-group").forEach((gEl) => {
+    const id = gEl.dataset.id;
+    const rels = [...gEl.querySelectorAll(".dupe-item")].map((x) => x.dataset.rel);
+
+    gEl.querySelector(".dupe-skip").addEventListener("click", async () => {
+      try {
+        await api("/api/dupe/skip", { method: "POST", body: JSON.stringify({ char, id }) });
+        toast("已忽略这组");
+        dropGroup(gEl);
+      } catch (e) { toast(e.message, "error"); }
+    });
+
+    gEl.querySelectorAll(".dupe-keep").forEach((btn) => btn.addEventListener("click", async () => {
+      const keepRel = btn.closest(".dupe-item").dataset.rel;
+      const others = rels.filter((r) => r !== keepRel);
+      if (!others.length) return;
+      if (!confirm(`保留这张，其余 ${others.length} 张移入废纸篓？`)) return;
+      try {
+        const r = await api("/api/trash_batch", { method: "POST", body: JSON.stringify({ rels: others }) });
+        toast(`已移入废纸篓 ${r.moved} 张`);
+        dropGroup(gEl);
+        scheduleTagsRefresh();
+      } catch (e) { toast(e.message, "error"); }
+    }));
+
+    gEl.querySelectorAll(".dupe-trash").forEach((btn) => btn.addEventListener("click", async () => {
+      const item = btn.closest(".dupe-item");
+      const rel = item.dataset.rel;
+      if (!confirm("把这 1 张移入废纸篓？")) return;
+      try {
+        await api("/api/trash_batch", { method: "POST", body: JSON.stringify({ rels: [rel] }) });
+        toast("已移入废纸篓");
+        item.remove();
+        if (gEl.querySelectorAll(".dupe-item").length < 2) dropGroup(gEl);
+        else refreshCount();
+        scheduleTagsRefresh();
+      } catch (e) { toast(e.message, "error"); }
+    }));
+  });
 }
 
 function refreshTrash() { if (state.view === "trash") renderTrash(); }
