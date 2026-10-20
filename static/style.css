@@ -413,3 +413,50 @@ input:focus, select:focus { border-color: var(--accent); }
 .dupe-size { font-size: 11px; color: var(--mut); margin: 2px 0 6px; }
 .dupe-ops { display: flex; gap: 6px; }
 .dupe-ops .btn { padding: 3px 8px; font-size: 12px; }
+
+/* 过滤词 */
+.dupe-wordbox input { width: 150px; padding: 3px 7px; font-size: 12px; }
+.dupe-wordval { color: var(--txt); font-weight: 600; }
+.dupe-warn { font-size: 11px; color: var(--yellow); }
+
+/* 勾选 → 两两比对 */
+.dupe-item { position: relative; }
+.dupe-pick { position: absolute; top: 6px; left: 6px; z-index: 2; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.92); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.dupe-pick input { margin: 0; width: 13px; height: 13px; cursor: pointer; accent-color: var(--accent); }
+.dupe-pick:hover { border-color: var(--accent); }
+.dupe-item.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.dupe-item.picked .dupe-pick { background: var(--accent); border-color: var(--accent); }
+.dupe-item.picked .dupe-pick input { filter: invert(1) hue-rotate(180deg); }
+.dupe-cmp:not(:disabled) { border-color: var(--accent); color: var(--accent2); font-weight: 600; }
+
+/* 两两闪烁比对 */
+.cmp { position: fixed; inset: 0; z-index: 60; background: rgba(12,14,18,.97); display: flex; flex-direction: column; color: #e5e7eb; }
+.cmp-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.cmp-title { flex: 1; font-size: 13px; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-top .vw-close { position: static; }
+.cmp-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; cursor: pointer; }
+.cmp-frame { position: relative; background: #000; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.1); }
+.cmp-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
+.cmp-frame img.on { opacity: 1; }
+.cmp-frame.diff img { opacity: 1; }
+.cmp-frame.diff #cmp-b { mix-blend-mode: difference; }
+.cmp-tag { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; background: rgba(255,255,255,.16); color: #fff; pointer-events: none; }
+.cmp-tag.a { background: rgba(59,130,246,.85); }
+.cmp-tag.b { background: rgba(16,185,129,.85); }
+.cmp-tag.diff { background: rgba(245,158,11,.9); color: #1F2937; }
+.cmp-bar { padding: 8px 16px 14px; display: flex; flex-direction: column; gap: 5px; }
+.cmp-file { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-file b { width: 12px; color: #e2e8f0; }
+.cmp-file span { overflow: hidden; text-overflow: ellipsis; }
+.cmp-file em { font-style: normal; color: #64748b; }
+.cmp-file .cmp-dim { font-style: normal; color: #64748b; }
+.cmp-file.cur { color: #fff; }
+.cmp-file.cur .cmp-dim { color: #cbd5e1; }
+.cmp-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.cmp-ctl select { padding: 3px 6px; font-size: 12px; }
+.cmp-hint { font-size: 11px; color: #64748b; }
+/* 深色底上的控件 */
+.cmp .btn { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.18); color: #e5e7eb; }
+.cmp .btn:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.34); color: #fff; }
+.cmp select { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.18); color: #e5e7eb; }
+.cmp select option { background: #1e293b; color: #e5e7eb; }

@@ -2694,6 +2694,22 @@ def _char_of(folder):
     return "/".join(parts[:2]) if len(parts) >= 2 else (folder or "")
 
 
+def _dupe_words(raw):
+    """过滤词：一对图两侧都命中才跳过。空串表示不过滤。"""
+    if raw is None:
+        raw = CONFIG.get("dupe_skip_words", "差分")
+    if isinstance(raw, (list, tuple)):
+        parts = [str(x) for x in raw]
+    else:
+        parts = re.split(r"[,，、;；/\s]+", str(raw or ""))
+    out = []
+    for w in parts:
+        w = w.strip()
+        if w and w.lower() not in [x.lower() for x in out]:
+            out.append(w[:24])
+    return ",".join(out[:8])
+
+
 @app.get("/api/dupe/chars")
 def api_dupe_chars():
     """角色列表：文件数 + 已算出的组数（未忽略的）。"""
@@ -2742,6 +2758,7 @@ def api_dupe_scan():
             args += ["--cos", str(max(0.5, min(cos, 0.99)))]
         except (TypeError, ValueError):
             args += ["--cos", "0.85"]
+        args += ["--skip-words", _dupe_words(data.get("words"))]
         env = os.environ.copy()
         env["DUPE_WORKERS"] = "4"
         log = open(str(ML_DIR / "dupes.log"), "ab")
@@ -2804,6 +2821,7 @@ def api_dupe_list():
     return jsonify({
         "ok": True, "char": ch, "built_at": block.get("built_at") or "",
         "th": block.get("th"), "cos": block.get("cos"), "files": block.get("files") or 0,
+        "skip_words": block.get("skip_words") or [],
         "groups": out,
     })
 

@@ -5,7 +5,8 @@
 本项目的差异：
   - 沙盒 = 角色（学院/角色），不是顶层目录；跨角色比没有意义
   - 加一道 CLIP 余弦复核（复用 ml/vectors.bin），挡掉「大片留白 + 小图」的误报
-  - 双侧都在「差分」目录的对直接跳过（差分本就是同一张底图换表情）
+  - 过滤词（默认「差分」）：一对图**两侧都命中**任一过滤词就跳过
+    （差分本就是同一张底图换表情，互比是无意义的噪音；差分 vs 原图仍然会检出）
 
 产物：
   ml/phash.json   { rel: [hash, mtime, size] }   哈希缓存，增量只算新的
@@ -15,12 +16,14 @@
 用法：
     python dupes.py --char "格黑娜/日奈"
     python dupes.py --char "格黑娜/日奈" --th 8 --cos 0.85
+    python dupes.py --char "格黑娜/日奈" --skip-words "差分,线稿"   # 空串 = 不过滤
     python dupes.py --list                 # 列出各角色已算情况
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -153,10 +156,30 @@ def group_id(rels):
 
 
 # ---------------------------------------------------------------- 检测
-def scan_char(char, th=8, cos_th=0.85, workers=8, exclude_intra_diff=True):
+def split_words(raw):
+    """把 "差分，线稿 线稿" 这类输入切成干净的词表（兼容中英文分隔符）。"""
+    if isinstance(raw, (list, tuple)):
+        parts = [str(x) for x in raw]
+    else:
+        parts = re.split(r"[,，、;；/\s]+", str(raw or ""))
+    out = []
+    for w in parts:
+        w = w.strip().lower()
+        if w and w not in out:
+            out.append(w)
+    return out
+
+
+def hits(rel, words):
+    s = (rel or "").lower()
+    return any(w in s for w in words)
+
+
+def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",)):
     files = [f for f in load_files(char)]
+    words = [w.lower() for w in (skip_words or []) if w]
     if len(files) < 2:
-        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files)}
+        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files), "skip_words": words}
 
     cache = load_json(PHASH_JSON, {})
     need = [f for f in files if not (cache.get(f["rel"]) and cache[f["rel"]][1] == f["mtime"])]
@@ -174,7 +197,7 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, exclude_intra_diff=True):
 
     items = [(f["rel"], cache[f["rel"]][0]) for f in files if f["rel"] in cache]
     if len(items) < 2:
-        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files)}
+        return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th, "files": len(files), "skip_words": words}
 
     row_of, Z = load_clip()
     rels = [r for r, _ in items]
@@ -204,7 +227,7 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, exclude_intra_diff=True):
         cos = V[s:e] @ V.T
         for a, b in zip(ri, ci):
             i, j = int(a + s), int(b)
-            if exclude_intra_diff and ("差分" in rels[i] and "差分" in rels[j]):
+            if words and hits(rels[i], words) and hits(rels[j], words):
                 continue
             c = float(cos[a, b]) if (has_vec[i] and has_vec[j]) else None
             if c is not None and c < cos_th:
@@ -277,7 +300,7 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, exclude_intra_diff=True):
 
     return {
         "char": char, "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th,
-        "files": len(files), "groups": groups,
+        "files": len(files), "skip_words": words, "groups": groups,
     }
 
 
@@ -286,6 +309,7 @@ def main():
     ap.add_argument("--char", default="")
     ap.add_argument("--th", type=int, default=8)
     ap.add_argument("--cos", type=float, default=0.85)
+    ap.add_argument("--skip-words", default="差分", help="逗号分隔；一对图两侧都命中则跳过，空串=不过滤")
     ap.add_argument("--workers", type=int, default=int(os.environ.get("DUPE_WORKERS", "8")))
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
@@ -301,11 +325,13 @@ def main():
         print("需要 --char（或 --list）")
         return 2
 
-    res = scan_char(args.char, th=args.th, cos_th=args.cos, workers=args.workers)
+    res = scan_char(args.char, th=args.th, cos_th=args.cos, workers=args.workers,
+                    skip_words=split_words(args.skip_words))
     data = load_json(DUPES_JSON, {})
     data[args.char] = res
     save_json(DUPES_JSON, data)
-    print("完成：%s，%d 张图，%d 组" % (args.char, res.get("files", 0), len(res["groups"])), flush=True)
+    print("完成：%s，%d 张图，%d 组（过滤词：%s）" % (
+        args.char, res.get("files", 0), len(res["groups"]), "、".join(res.get("skip_words") or []) or "无"), flush=True)
     return 0
 
 

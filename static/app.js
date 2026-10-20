@@ -618,6 +618,7 @@ async function loadFiles(reset) {
   try {
     const data = await api("/api/files?" + buildQuery());
     if (seq !== state.loadSeq) return; // 过期响应：期间又发起了新搜索/筛选，忽略旧结果
+    if (state.view !== "all" && state.view !== "untagged") return; // 已切到未处理/相似图等视图，别把库里卡片塞进去
     state.files = state.files.concat(data.files);
     state.total = data.total;
     state.done = state.files.length >= data.total;
@@ -1869,8 +1870,9 @@ async function renderTrash() {
 const DUPE_OPTS_KEY = "emojiTool.dupeOpts.v1";
 
 function dupeOpts() {
-  try { return Object.assign({ th: 8, cos: 0.85 }, JSON.parse(localStorage.getItem(DUPE_OPTS_KEY) || "{}")); }
-  catch (e) { return { th: 8, cos: 0.85 }; }
+  const d = { th: 8, cos: 0.85, words: "差分" };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem(DUPE_OPTS_KEY) || "{}")); }
+  catch (e) { return d; }
 }
 function dupeSaveOpts(o) { try { localStorage.setItem(DUPE_OPTS_KEY, JSON.stringify(o)); } catch (e) {} }
 
@@ -1902,9 +1904,13 @@ async function renderDupeChars() {
 
   grid.innerHTML = `
     <div class="dupe-bar">
-      <span class="dupe-hint">只在同一个角色的文件之间比对，「差分」互比默认跳过；点「检测」现算这个角色。</span>
+      <span class="dupe-hint">只在同一个角色的文件之间比对；点「检测」现算这个角色。</span>
       <label class="dupe-opt">阈值 <select id="dupe-th">${[4, 6, 8, 10, 12].map((v) => `<option value="${v}"${v === o.th ? " selected" : ""}>${v}</option>`).join("")}</select></label>
       <label class="dupe-opt">相似度 ≥ <select id="dupe-cos">${[0.8, 0.85, 0.9, 0.95].map((v) => `<option value="${v}"${v === o.cos ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="dupe-opt dupe-wordbox" title="两侧路径都含其中任一个词就不互相比较（差分 vs 原图仍会检出）。逗号、空格分隔；留空 = 不过滤">过滤词
+        <input id="dupe-words" type="text" value="${esc(o.words)}" placeholder="差分" autocomplete="off" spellcheck="false">
+      </label>
+      <span class="dupe-warn" id="dupe-warn" hidden>改动需重测生效</span>
     </div>
     <div class="dupe-list">
       ${data.items.map((it) => `
@@ -1921,12 +1927,17 @@ async function renderDupeChars() {
     </div>`;
 
   const readOpts = () => {
-    const opts = { th: Number($("dupe-th").value) || 8, cos: Number($("dupe-cos").value) || 0.85 };
+    const opts = dupeOpts();
+    opts.th = Number($("dupe-th").value) || 8;
+    opts.cos = Number($("dupe-cos").value) || 0.85;
+    opts.words = $("dupe-words").value.trim();
     dupeSaveOpts(opts);
     return opts;
   };
-  $("dupe-th").addEventListener("change", readOpts);
-  $("dupe-cos").addEventListener("change", readOpts);
+  $("dupe-th").addEventListener("change", () => { readOpts(); $("dupe-warn").hidden = false; });
+  $("dupe-cos").addEventListener("change", () => { readOpts(); $("dupe-warn").hidden = false; });
+  $("dupe-words").addEventListener("input", readOpts);
+  $("dupe-words").addEventListener("change", () => { $("dupe-warn").hidden = false; });
 
   grid.querySelectorAll(".dupe-row").forEach((row) => {
     const ch = row.dataset.char;
@@ -1939,7 +1950,7 @@ async function renderDupeChars() {
 async function dupeScan(char) {
   const o = dupeOpts();
   try {
-    await api("/api/dupe/scan", { method: "POST", body: JSON.stringify({ char, th: o.th, cos: o.cos }) });
+    await api("/api/dupe/scan", { method: "POST", body: JSON.stringify({ char, th: o.th, cos: o.cos, words: o.words }) });
   } catch (e) { toast(e.message, "error"); return; }
   toast(`正在检测 ${char}…`);
   $("nav-dupes").textContent = "…";
@@ -1963,9 +1974,11 @@ async function renderDupeGroups(char) {
   $("result-count").textContent = `${char} · ${fmtCount(data.files)} 张 · ${groups.length} 组（阈值 ${data.th ?? "-"}，相似度 ≥ ${data.cos ?? "-"}）`;
   $("nav-dupes").textContent = groups.length ? fmtCount(groups.length) : "";
 
+  const w = (data.skip_words || []).join("、");
   const head = `<div class="dupe-bar">
       <button class="btn ghost small" id="dupe-back">← 返回角色</button>
       <span class="dupe-hint">${esc(char)}${data.built_at ? " · 检测于 " + esc(data.built_at) : " · 还没检测"}</span>
+      <span class="dupe-opt">过滤词 <b class="dupe-wordval">${w ? esc(w) : "无"}</b></span>
       <button class="btn ghost small" id="dupe-rescan">重新检测</button>
     </div>`;
 
@@ -1977,11 +1990,13 @@ async function renderDupeGroups(char) {
         <div class="dupe-ghead">
           <span class="dupe-badge${g.exact ? " exact" : ""}">${g.exact ? "完全相同" : "相似"}</span>
           <span class="dupe-gmeta">${g.files.length} 张 · 距离 ${g.min_d} · 相似度 ${(g.max_cos || 0).toFixed(3)}</span>
+          <button class="btn ghost small dupe-cmp" disabled title="勾选两张缩略图，让它们在同一位置交替闪烁">闪烁比对</button>
           <button class="btn ghost small dupe-skip">忽略这组</button>
         </div>
         <div class="dupe-imgs">
           ${g.files.map((f) => `
             <figure class="dupe-item" data-rel="${esc(f.rel)}">
+              <label class="dupe-pick" title="勾选两张做闪烁比对"><input type="checkbox" class="dupe-cb" tabindex="-1"></label>
               <a class="dupe-thumb" href="${fileUrl(f.rel, f.mtime)}" target="_blank" rel="noreferrer"><img loading="lazy" src="${thumbUrl(f.rel, f.mtime)}" alt=""></a>
               <figcaption>
                 <div class="dupe-name" title="${esc(f.rel)}">${esc(f.name)}</div>
@@ -2019,6 +2034,36 @@ async function renderDupeGroups(char) {
     const id = gEl.dataset.id;
     const rels = [...gEl.querySelectorAll(".dupe-item")].map((x) => x.dataset.rel);
 
+    // ---- 勾选两张 → 闪烁比对 ----
+    const grp = groups.find((x) => x.id === id) || { files: [] };
+    const fmap = {};
+    (grp.files || []).forEach((f) => { fmap[f.rel] = f; });
+    const picked = [];
+    const cmpBtn = gEl.querySelector(".dupe-cmp");
+    const syncPick = () => {
+      gEl.querySelectorAll(".dupe-item").forEach((it) => it.classList.toggle("picked", picked.includes(it.dataset.rel)));
+      const n = picked.length;
+      cmpBtn.disabled = n !== 2;
+      cmpBtn.textContent = n === 2 ? "闪烁比对 A↔B" : (n ? `已选 ${n}/2` : "闪烁比对");
+    };
+    gEl.querySelectorAll(".dupe-cb").forEach((cb) => cb.addEventListener("change", () => {
+      const rel = cb.closest(".dupe-item").dataset.rel;
+      const i = picked.indexOf(rel);
+      if (!cb.checked) {
+        if (i >= 0) picked.splice(i, 1);
+      } else {
+        if (i < 0) picked.push(rel);
+        while (picked.length > 2) {
+          const drop = picked.shift();
+          const old = [...gEl.querySelectorAll(".dupe-item")].find((x) => x.dataset.rel === drop);
+          const box = old && old.querySelector(".dupe-cb");
+          if (box) box.checked = false;
+        }
+      }
+      syncPick();
+    }));
+    cmpBtn.addEventListener("click", () => { if (picked.length === 2) openCmp(picked[0], picked[1], fmap); });
+
     gEl.querySelector(".dupe-skip").addEventListener("click", async () => {
       try {
         await api("/api/dupe/skip", { method: "POST", body: JSON.stringify({ char, id }) });
@@ -2054,6 +2099,108 @@ async function renderDupeGroups(char) {
       } catch (e) { toast(e.message, "error"); }
     }));
   });
+}
+
+/* ---- 两两闪烁比对 ---- */
+const CMP = { a: "", b: "", files: {}, playing: true, onA: true, speed: 400, mode: "blink", timer: 0 };
+
+function cmpFit() {
+  const stage = $("cmp-stage");
+  const fa = $("cmp-a"), fb = $("cmp-b");
+  const wa = fa.naturalWidth || 0, ha = fa.naturalHeight || 0;
+  const wb = fb.naturalWidth || 0, hb = fb.naturalHeight || 0;
+  if (!wa || !wb) return;
+  const W = Math.max(wa, wb), H = Math.max(ha, hb);
+  const availW = Math.max(160, stage.clientWidth - 48);
+  const availH = Math.max(160, stage.clientHeight - 48);
+  const s = Math.min(availW / W, availH / H, 2);
+  const frame = $("cmp-frame");
+  frame.style.width = Math.round(W * s) + "px";
+  frame.style.height = Math.round(H * s) + "px";
+}
+
+function cmpPaint() {
+  const diff = CMP.mode === "diff";
+  $("cmp-frame").classList.toggle("diff", diff);
+  $("cmp-a").classList.toggle("on", diff || CMP.onA);
+  $("cmp-b").classList.toggle("on", diff || !CMP.onA);
+  const tag = $("cmp-tag");
+  tag.className = "cmp-tag " + (diff ? "diff" : (CMP.onA ? "a" : "b"));
+  tag.textContent = diff ? "差异 |A−B|" : (CMP.onA ? "A" : "B");
+  $("cmp-fa").classList.toggle("cur", diff || CMP.onA);
+  $("cmp-fb").classList.toggle("cur", diff || !CMP.onA);
+}
+
+function cmpRun() {
+  if (CMP.timer) clearInterval(CMP.timer);
+  CMP.timer = 0;
+  if (!CMP.playing || CMP.mode !== "blink") return;
+  CMP.timer = setInterval(() => { CMP.onA = !CMP.onA; cmpPaint(); }, CMP.speed);
+}
+
+function openCmp(ra, rb, files) {
+  const fb0 = (files && files[ra]) || { rel: ra, name: ra.split("/").pop(), size: 0, mtime: 0 };
+  const fb1 = (files && files[rb]) || { rel: rb, name: rb.split("/").pop(), size: 0, mtime: 0 };
+  CMP.a = ra; CMP.b = rb; CMP.files = files || {};
+  CMP.onA = true; CMP.playing = true; CMP.mode = "blink";
+  CMP.speed = Number($("cmp-speed").value) || 400;
+
+  $("cmp-title").textContent = `闪烁比对 · ${fb0.name} ↔ ${fb1.name}`;
+  $("cmp-fa").innerHTML = `<b>A</b><span title="${esc(fb0.rel)}">${esc(fb0.name)}</span><em>${dupeSize(fb0.size)}</em><i class="cmp-dim" id="cmp-da"></i>`;
+  $("cmp-fb").innerHTML = `<b>B</b><span title="${esc(fb1.rel)}">${esc(fb1.name)}</span><em>${dupeSize(fb1.size)}</em><i class="cmp-dim" id="cmp-db"></i>`;
+
+  const ia = $("cmp-a"), ib = $("cmp-b");
+  ia.onload = () => {
+    const d = $("cmp-da");
+    if (d) d.textContent = `${ia.naturalWidth}×${ia.naturalHeight}`;
+    cmpFit();
+  };
+  ib.onload = () => {
+    const d = $("cmp-db");
+    if (d) d.textContent = `${ib.naturalWidth}×${ib.naturalHeight}`;
+    cmpFit();
+  };
+  ia.src = fileUrl(ra, fb0.mtime);
+  ib.src = fileUrl(rb, fb1.mtime);
+
+  $("cmp").hidden = false;
+  $("cmp-play").textContent = "⏸ 暂停";
+  $("cmp-mode").textContent = "差异叠加";
+  cmpPaint();
+  cmpRun();
+  cmpFit();
+  requestAnimationFrame(cmpFit);
+}
+
+function closeCmp() {
+  if (CMP.timer) clearInterval(CMP.timer);
+  CMP.timer = 0;
+  $("cmp").hidden = true;
+  $("cmp-a").src = "";
+  $("cmp-b").src = "";
+}
+
+function cmpPlay() {
+  CMP.playing = !CMP.playing;
+  $("cmp-play").textContent = CMP.playing ? "⏸ 暂停" : "▶ 播放";
+  cmpRun();
+}
+
+function cmpSetMode() {
+  CMP.mode = CMP.mode === "diff" ? "blink" : "diff";
+  $("cmp-mode").textContent = CMP.mode === "diff" ? "回到闪烁" : "差异叠加";
+  cmpPaint();
+  cmpRun();
+}
+
+function cmpSwap() { openCmp(CMP.b, CMP.a, CMP.files); }
+
+function cmpSelect(which) {
+  CMP.playing = false;
+  $("cmp-play").textContent = "▶ 播放";
+  cmpRun();
+  CMP.onA = which === "a";
+  cmpPaint();
 }
 
 function refreshTrash() { if (state.view === "trash") renderTrash(); }
@@ -2608,6 +2755,16 @@ function bindEvents() {
   $("viewer").addEventListener("dblclick", (e) => {
     if (e.target.id === "vw-name" && state.current) { e.stopPropagation(); inlineRename(e.target, state.current.rel); }
   });
+  $("cmp-close").addEventListener("click", closeCmp);
+  $("cmp-play").addEventListener("click", cmpPlay);
+  $("cmp-mode").addEventListener("click", cmpSetMode);
+  $("cmp-swap").addEventListener("click", cmpSwap);
+  $("cmp-stage").addEventListener("click", (e) => { if (!e.target.closest("button")) cmpPlay(); });
+  $("cmp-speed").addEventListener("change", () => {
+    CMP.speed = Number($("cmp-speed").value) || 400;
+    if (CMP.playing && CMP.mode === "blink") cmpRun();
+  });
+  window.addEventListener("resize", () => { if (!$("cmp").hidden) cmpFit(); });
   $("btn-trash-file").addEventListener("click", () => doTrash(state.current));
   const btnPlace = $("btn-place-file");
   if (btnPlace) btnPlace.addEventListener("click", () => { if (state.current) openTagsModal("place", state.current); });
@@ -2699,6 +2856,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (!$("cmp").hidden) { closeCmp(); return; }
       if (!$("modal-newtag").hidden) { $("modal-newtag").hidden = true; return; }
       if (!$("modal-tags").hidden || !$("modal-rename").hidden || !$("modal-upload").hidden) {
         $("modal-tags").hidden = $("modal-rename").hidden = $("modal-upload").hidden = true;
@@ -2707,6 +2865,11 @@ function bindEvents() {
       if (!$("viewer").hidden) { closeViewer(); return; }
       if (!$("inspector").hidden) { closeInspector(); clearSelection(true); syncCardClasses(); return; }
       $("drawer").hidden = true;
+    }
+    if (!$("cmp").hidden) {
+      if (e.key === " ") { e.preventDefault(); cmpPlay(); return; }
+      if (e.key === "1") { cmpSelect("a"); return; }
+      if (e.key === "2") { cmpSelect("b"); return; }
     }
     if (!$("viewer").hidden) {
       if (e.key === "ArrowLeft") vwNav(-1);

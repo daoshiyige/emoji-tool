@@ -65,5 +65,8 @@
     "原版",
     "野营"
   ],
-  "ml_python": "C:/Users/daoshiyige/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
+  "ml_python": "C:/Users/daoshiyige/.workbuddy/binaries/python/envs/default/Scripts/python.exe",
+  "dupe_threshold": 8,
+  "dupe_cos": 0.85,
+  "dupe_skip_words": "差分"
 }
