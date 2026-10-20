@@ -382,3 +382,4 @@ input:focus, select:focus { border-color: var(--accent); }
 .sug-chip { font-size: 12px; padding: 2px 10px; border-radius: 12px; border: 1px dashed var(--line); background: #fff; color: var(--txt); transition: all .1s; }
 .sug-chip:hover { border-color: var(--accent); color: var(--accent); }
 .sug-chip.on { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.te-recent { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; align-items: center; }

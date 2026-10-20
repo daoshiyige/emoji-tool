@@ -84,8 +84,9 @@ def _encode(chunk):
 def load_rels():
     con = sqlite3.connect("file:%s?mode=ro" % (BASE / "library.db"), uri=True)
     con.row_factory = sqlite3.Row
+    # 连「未处理」一起索引：候选现在只给未处理的图用，库里已打标的反而不需要
     rows = con.execute(
-        "SELECT rel, characters FROM files WHERE status='normal' AND folder <> '未处理' ORDER BY rel"
+        "SELECT rel, characters FROM files WHERE status='normal' ORDER BY rel"
     ).fetchall()
     return [(r["rel"], (r["characters"] or "").split(",")[0].strip()) for r in rows]
 

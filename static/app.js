@@ -975,7 +975,8 @@ function mountTagEditor(containerId) {
   box.innerHTML = `
     <div class="te-row"><label>学院 <span class="auto-tip">随角色自动关联</span></label><div class="tag-edit-chips" data-kind="academy"></div></div>
     <div class="te-row"><label>角色（可多选，支持拼音）</label><div class="tag-edit-chips" data-kind="character"></div>
-      <div class="tag-edit-ip"><input class="tag-edit-input" data-pool="character" placeholder="输入角色或拼音缩写…" autocomplete="off"><div class="tag-edit-sg" hidden></div></div></div>
+      <div class="tag-edit-ip"><input class="tag-edit-input" data-pool="character" placeholder="输入角色或拼音缩写…" autocomplete="off"><div class="tag-edit-sg" hidden></div></div>
+      <div class="te-row"><label>近期</label><div class="te-recent"></div></div></div>
     <div class="te-row"><label>画师</label><div class="tag-edit-chips" data-kind="artist"></div>
       <div class="tag-edit-ip"><input class="tag-edit-input" data-pool="artist" placeholder="输入画师…" autocomplete="off"><div class="tag-edit-sg" hidden></div></div>
       <div class="alias-row"><span class="alias-label">别名</span><span class="alias-chips"></span><button class="alias-add" title="添加别名">＋</button><span class="alias-ip"><input class="alias-input" placeholder="输入别名（可搜已有画师）后回车" autocomplete="off" hidden><div class="alias-sg" hidden></div></span></div></div>
@@ -1017,7 +1018,7 @@ async function loadSuggestions(rel, where) {
   const box = host.querySelector(".sug-chips");
   host.hidden = true;
   if (box) box.innerHTML = "";
-  if (!rel) return;
+  if (!rel || !isInboxRel(rel)) return;   // 库内文件标签来自路径，不需要推荐
   try {
     const r = await api("/api/suggest?rel=" + encodeURIComponent(rel) + "&n=3");
     if (seq !== sugSeq[where]) return;
@@ -1334,6 +1335,8 @@ function renderTagChips(box, file) {
   const sp = box.querySelector('[data-kind="special"]');
   if (!file) {
     if (ac) ac.innerHTML = ""; if (ch) ch.innerHTML = ""; if (ar) ar.innerHTML = ""; if (sp) sp.innerHTML = "";
+    const rc = box.querySelector(".te-recent");
+    if (rc) rc.innerHTML = "";
     return;
   }
   if (ac) ac.innerHTML = file.academy ? tagChipHTML("academy", "ac", file.academy) : empty("未设置");
@@ -1350,6 +1353,18 @@ function renderTagChips(box, file) {
   box.querySelectorAll(".tag-x").forEach((b) => b.addEventListener("click", () => {
     mutateTags(b.dataset.kind, b.dataset.name, false);
   }));
+  const recent = box.querySelector(".te-recent");
+  if (recent) {
+    const applied = new Set(file.characters || []);
+    const names = (recentTags.characters || []).slice(0, 10);
+    recent.innerHTML = names.length
+      ? names.map((n) => `<button class="sp-chip recent-chip${applied.has(n) ? " on" : ""}" data-name="${esc(n)}">${esc(n)}</button>`).join("")
+      : `<span class="tag-edit-empty">用过的角色会出现在这里</span>`;
+    recent.querySelectorAll(".recent-chip").forEach((b) => b.addEventListener("click", () => {
+      if (applied.has(b.dataset.name)) mutateTags("character", b.dataset.name, false);
+      else applyTag("character", b.dataset.name);
+    }));
+  }
   const aliasRow = box.querySelector(".alias-row");
   if (aliasRow) {
     const artist = file ? file.artist : "";
