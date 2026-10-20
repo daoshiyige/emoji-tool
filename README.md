@@ -78,23 +78,28 @@ venv\Scripts\python app.py --open
 
 属性面板/查看器里会显示 3 个角色候选，点一下才打标；不点就什么都不发生。**只对「未处理」里的图显示**——库内文件的标签来自目录路径，本来就有，不需要推荐。
 
-- 候选来自离线算好的图像特征索引（`ml/`）：每张图一个 128 维向量，与各角色质心算余弦
-- **网页端不加载模型、不依赖 numpy**：只按行号读 `ml/vectors.bin` 里的 128 个 float16，纯 Python 点积，约 3ms
-- 索引需要单独生成（用独立的 ML 环境，不影响 venv）：
+- 候选来自离线算好的图像特征索引（`ml/`）：每张图一个 128 维向量（CLIP B/32 + PCA 白化），与各角色质心算余弦
+- **网页端不加载模型、不依赖 numpy**：只按行号读 `ml/vectors.bin` 里的 128 个 float16，纯 Python 点积，约 1~3ms
+- **放新图进「未处理」后不用手动跑脚本**：打开「未处理」时，后端发现索引里缺这些图，会用独立的 ML 解释器在后台补算（几秒），前端先显示「正在识别…」再出候选。配置项 `ml_python` 指向那个解释器（要有 numpy/onnxruntime/Pillow，见 `ml/requirements.txt`），留空则找 `ml/.venv`
+- 分数够不够只影响**显示方式**：top 分 ≥ `ml_suggest_min_score`（默认 0.35）显示「推荐」，否则显示「推荐 · 把握不大」并压暗——未处理里宁可给个方向，也别空着
+- 首次建索引 / 换模型才需要手动跑：
 
 ```bat
-:: 1) 用装了 onnxruntime + numpy 的 Python（本机是 WorkBuddy 的独立环境，不碰 venv）
-::    没装过的话先：python -m pip install numpy onnxruntime
-:: 2) 全量建索引（98k 张约 1 小时，6 进程；模型默认放在 ml/models/vision_model.onnx，可用 EMBED_MODEL 覆盖）
+:: 用装了 numpy + onnxruntime + Pillow 的 Python（别装进 Flask 的 venv）
+python -m pip install -r .emoji-tool\ml\requirements.txt
+
+:: 全量重建（98k 张约 1 小时，6 进程；模型在 ml/models/vision_model.onnx，可用 EMBED_MODEL 覆盖）
 python .emoji-tool\ml\embed.py --rebuild --workers 6
 
-:: 3) 之后新增图片：增量，只算新文件（几分钟）
+:: 手动增量（平时不用，开「未处理」会自动跑）
 python .emoji-tool\ml\embed.py
+python .emoji-tool\ml\embed.py --status
 ```
 
 > 多进程在这台机器上需要沙箱外执行；单进程（`--workers 1`）也行，只是慢 5 倍。
+> 索引只增不删：图片被移走后旧行会在下次增量时自动剔除。
 
-准确率：top-1 约 48%、top-3 约 63%（210 个角色）。**所以只做候选，不做自动打标**——点错了的代价只是不点它。
+准确率：全库 top-1 约 58~60%、top-3 约 71~76%；分数 ≥0.35 的那 44% 里 top-1 精确率 86%、top-3 94%。**所以只做候选，不做自动打标**——点错了的代价只是不点它。
 
 ## 尚未实现（下一步）
 

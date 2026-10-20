@@ -376,3 +376,8 @@ input:focus, select:focus { border-color: var(--accent); }
 .sug-chip:hover { border-color: var(--accent); color: var(--accent); }
 .sug-chip.on { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .te-recent { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; align-items: center; }
+
+/* 候选：低置信时整体压暗，别让人误以为很准 */
+.sug-row.sug-low .sug-chip { opacity: .62; border-style: dotted; }
+.sug-row.sug-low .sug-chip:hover { opacity: 1; }
+.sug-wait { font-size: 11px; color: var(--mut2); }

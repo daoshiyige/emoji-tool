@@ -952,19 +952,37 @@ function ensureSuggestHost(where) {
   return el;
 }
 
-async function loadSuggestions(rel, where) {
+async function loadSuggestions(rel, where, tries = 0) {
   const host = ensureSuggestHost(where);
   if (!host) return;
   const seq = ++sugSeq[where];
   const box = host.querySelector(".sug-chips");
-  host.hidden = true;
-  if (box) box.innerHTML = "";
-  if (!rel || !isInboxRel(rel)) return;   // 库内文件标签来自路径，不需要推荐
+  if (!rel || !isInboxRel(rel)) {   // 库内文件标签来自路径，不需要推荐
+    host.hidden = true;
+    if (box) box.innerHTML = "";
+    return;
+  }
   try {
     const r = await api("/api/suggest?rel=" + encodeURIComponent(rel) + "&n=3");
     if (seq !== sugSeq[where]) return;
     const items = (r && r.items) || [];
-    if (!items.length) return;
+    if (!items.length) {
+      // 索引里还没有这张图（刚放进未处理）→ 后端已在后台补算，稍等再来
+      if (r && r.updating && tries < 6) {
+        if (box) box.innerHTML = '<span class="sug-wait">正在识别…</span>';
+        host.hidden = false;
+        setTimeout(() => { if (seq === sugSeq[where]) loadSuggestions(rel, where, tries + 1); }, 2500);
+        return;
+      }
+      host.hidden = true;
+      if (box) box.innerHTML = "";
+      return;
+    }
+    const confident = !(r && r.confident === false);
+    const label = host.querySelector(".sug-label");
+    if (label) label.textContent = confident ? "推荐" : "推荐 · 把握不大";
+    host.classList.toggle("sug-low", !confident);
+    if (box) box.innerHTML = "";
     for (const it of items) {
       const b = document.createElement("button");
       b.className = "sug-chip";

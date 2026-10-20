@@ -1731,6 +1731,55 @@ def _ml_suggest(rel, n=3):
     return [{"character": nm, "score": round(sc, 3)} for sc, nm in out[:n]]
 
 
+_ML_JOB = {"proc": None, "started": 0.0}
+
+
+def _ml_python():
+    """跑 ml/embed.py 用的解释器（要有 numpy + onnxruntime）。"""
+    p = str(CONFIG.get("ml_python") or "").strip()
+    if p and Path(p).exists():
+        return p
+    cand = ML_DIR / ".venv" / "Scripts" / "python.exe"
+    return str(cand) if cand.exists() else ""
+
+
+def _ml_job_running():
+    pr = _ML_JOB.get("proc")
+    return pr is not None and pr.poll() is None
+
+
+def _ml_ensure_indexed(rels):
+    """索引里缺这些 rel 就在后台补算（独立解释器，不阻塞网页请求）。"""
+    if _ml_job_running():
+        return True
+    m = _ml_load()
+    if not m:
+        return False
+    rows = m.get("rows") or {}
+    if not any(r not in rows for r in rels):
+        return False
+    now = time.time()
+    if now - _ML_JOB.get("started", 0.0) < 20:      # 防抖，别反复起进程
+        return True
+    py = _ml_python()
+    script = ML_DIR / "embed.py"
+    if not py or not script.exists():
+        return False
+    try:
+        env = os.environ.copy()
+        env["EMBED_WORKERS"] = "2"
+        log = open(str(ML_DIR / "embed.log"), "ab")
+        flags = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW
+        _ML_JOB["proc"] = subprocess.Popen(
+            [py, str(script)], cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+            stdout=log, stderr=log, env=env, creationflags=flags,
+        )
+        _ML_JOB["started"] = now
+        return True
+    except Exception:
+        return False
+
+
 @app.get("/api/suggest")
 def api_suggest():
     """角色候选：只给排序建议，不写库；由前端点选后走 /api/tags。"""
@@ -1740,15 +1789,20 @@ def api_suggest():
     except ValueError:
         n = 3
     items = _ml_suggest(rel, max(1, min(n, 8)))
-    # 分数和准确率强相关（实测 top 分 ≥0.35 时 top-1 精确率约 86%、top-3 约 94%），
-    # 低于阈值的干脆不显示，免得给人不可信的候选。
+    m = _ml_load()
+    indexed = bool(m and rel in (m.get("rows") or {}))
+    updating = False if indexed else _ml_ensure_indexed([rel])
+    # 实测 top 分 ≥0.35 时 top-1 精确率约 86%（覆盖 44%）；低于它的也照给，
+    # 但前端会显示成「把握不大」——未处理里的图宁可给个方向，也别空着。
     try:
         th = float(CONFIG.get("ml_suggest_min_score", 0.35))
     except (TypeError, ValueError):
         th = 0.35
-    if not items or items[0]["score"] < th:
-        items = []
-    return jsonify({"ok": True, "items": items})
+    top = items[0]["score"] if items else 0.0
+    return jsonify({
+        "ok": True, "items": items, "indexed": indexed, "updating": updating,
+        "confident": bool(items) and top >= th, "top": top,
+    })
 
 
 @app.post("/api/new_tag")
@@ -2620,6 +2674,8 @@ def api_inbox():
                     "artist": artist_primary(artist) if artist else "",
                     "artist_raw": artist, "size": size, "mtime": mtime, "ctime": ctime,
                 })
+    if items:
+        _ml_ensure_indexed([it["rel"] for it in items])
     return jsonify({"files": items})
 
 

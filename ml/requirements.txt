@@ -1,0 +1,5 @@
+# 离线特征索引用的依赖（不要装进 Flask 的 venv，网页端不需要这些）
+# Windows 上 onnxruntime 装 1.31 会导入即崩（这台机器实测），固定 1.20.1
+numpy>=1.26,<3
+onnxruntime==1.20.1
+pillow>=10
