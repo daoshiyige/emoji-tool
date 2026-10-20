@@ -104,13 +104,6 @@ input:focus, select:focus { border-color: var(--accent); }
 .grp-cnt { font-style: normal; font-size: 11px; }
 .grp-body { padding: 2px 4px 8px 14px; }
 .grp-search { width: 100%; font-size: 11px; padding: 4px 9px; margin-bottom: 7px; border-radius: 6px; }
-/* 近期标签推荐（角色组）：chip 流式排布，最多 10 个 */
-.grp-recent { margin-bottom: 7px; padding-bottom: 7px; border-bottom: 1px dashed var(--line); }
-.grp-recent-head { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: var(--mut); margin: 0 0 5px 2px; }
-.grp-recent-tip { font-size: 10px; color: var(--mut2); }
-.grp-recent .chip { background: var(--panel2); }
-.grp-recent .chip:hover { background: #fff; }
-.grp-recent .chip.on { background: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0; }
 .chips.scroll { max-height: 260px; overflow-y: auto; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--txt); transition: all .1s; }

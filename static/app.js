@@ -178,7 +178,6 @@ function renderGroup(grp, key, map) {
       grpUI.artistShowAll = true;
       renderGroup(grp, key, map);
     }
-    if (grp === "character") renderRecentChars(map, q);
     box.querySelectorAll(".chip").forEach((c) => {
       if (c.classList.contains("chip-notag")) { c.style.display = ""; return; }
       const name = c.dataset.name;
@@ -190,7 +189,6 @@ function renderGroup(grp, key, map) {
     const moreBtn = box.querySelector(".grp-more");
     if (moreBtn) moreBtn.style.display = q ? "none" : "";
   };
-  if (grp === "character") renderRecentChars(map, search.value.trim());
 }
 
 function chipAllowed(charName) {
@@ -280,70 +278,13 @@ function touchRecentTag(name) {
   saveRecentTags();
 }
 
-// 按当前搜索词筛近期标签：无输入 = 全部（最多 10 个）；有输入 = 与主列表同一套匹配（含拼音/别名）
-function recentCharNames(map, q) {
-  const out = [];
-  for (const n of recentTags.characters) {
-    if (map[n] === undefined) continue;          // 库里已经没有这个标签了，跳过
-    if (q && !tagMatch(n, q)) continue;
-    out.push(n);
-  }
-  if (q) out.sort((a, b) => tagSort([a, map[a] || 0], [b, map[b] || 0], q));
-  return out.slice(0, RECENT_SHOW);
-}
-
-// 模板被 Flask 缓存（改 index.html 需重启）时兜底：DOM 里没有推荐区就自己建一个，放在角色 chip 列表上面
-function ensureRecentHost() {
-  let wrap = $("recent-character");
-  if (wrap) return wrap;
-  const chips = $("chips-character");
-  const body = chips && chips.parentElement;
-  if (!body) return null;
-  wrap = document.createElement("div");
-  wrap.className = "grp-recent";
-  wrap.id = "recent-character";
-  wrap.hidden = true;
-  wrap.innerHTML = `<div class="grp-recent-head">近期<span class="grp-recent-tip">最近用过的角色</span></div><div class="chips" id="chips-recent-character"></div>`;
-  body.insertBefore(wrap, chips);
-  return wrap;
-}
-
-function renderRecentChars(map, q) {
-  const wrap = ensureRecentHost();
-  const box = $("chips-recent-character");
-  if (!wrap || !box) return;
-  const m = map || groupMap("characters");
-  const search = $("search-character");
-  const query = q == null ? ((search && search.value.trim()) || "") : q;
-  const names = recentCharNames(m, query);
-  box.innerHTML = "";
-  if (!names.length) { wrap.hidden = true; return; }
-  const sel = new Set(state.filters.characters);
-  for (const name of names) {
-    const cnt = m[name] || 0;
-    const chip = document.createElement("button");
-    chip.className = "chip" + (sel.has(name) ? " on" : "") + (state.facets && !cnt ? " dim" : "");
-    chip.dataset.name = name;
-    chip.innerHTML = `<span>${esc(name)}</span><span class="chip-cnt">${fmtCount(cnt)}</span>`;
-    chip.title = "近期使用";
-    chip.addEventListener("click", () => toggleFilter("characters", name));
-    box.appendChild(chip);
-  }
-  wrap.hidden = false;
-}
-
 function toggleFilter(key, value) {
   if (key === "characters" && !chipAllowed(value) && !state.filters.characters.includes(value)) {
     toast(`强制筛选：角色「${value}」不属于所选学院，结果将为空`, "warn");
   }
   const set = state.filters[key];
   const i = set.indexOf(value);
-  if (i >= 0) set.splice(i, 1);
-  else {
-    set.push(value);
-    if (key === "characters") touchRecentTag(value);   // 只在"用上"时记，取消选择不算
-  }
-  if (key === "characters") renderRecentChars(groupMap("characters"));
+  if (i >= 0) set.splice(i, 1); else set.push(value);
   refreshFilterToolbar();
   renderFilterBar();
   if (state.view === "all" || state.view === "untagged") loadFiles(true);
@@ -1533,7 +1474,6 @@ function mutateTags(kind, name, add, rel) {
     changed = true;
   }
   if (!changed) return;
-  if (kind === "character" && state.tags) renderRecentChars(groupMap("characters"));
   refreshTagEditors();
   scheduleLibTagSave();
 }
