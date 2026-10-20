@@ -180,6 +180,10 @@ SCAN_LIMIT = int(os.environ.get("EMOJI_SCAN_LIMIT", "0")) or None
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"),
             static_folder=str(BASE_DIR / "static"))
+# 模板改动自己重载：否则「换了 index.html 却没重启」会出现模板旧、JS 新的错配，
+# 导致 bindEvents 里找不到新元素而整段中断（拖拽/快捷键全废）。
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 # ---------------------------------------------------------------- 数据库
 def _connect():

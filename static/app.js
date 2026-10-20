@@ -2235,7 +2235,7 @@ function cmpPaint() {
 }
 
 function cmpShow(side) {
-  if ($("cmp").hidden || CMP.mode === "diff") return;
+  if (!$("cmp") || $("cmp").hidden || CMP.mode === "diff") return;
   if (CMP.side === side) return;
   CMP.side = side;
   cmpPaint();
@@ -2273,6 +2273,7 @@ function openCmp(ra, rb, files) {
 }
 
 function closeCmp() {
+  if (!$("cmp")) return;
   $("cmp").hidden = true;
   $("cmp-a").src = "";
   $("cmp-b").src = "";
@@ -2839,21 +2840,24 @@ function bindEvents() {
   $("viewer").addEventListener("dblclick", (e) => {
     if (e.target.id === "vw-name" && state.current) { e.stopPropagation(); inlineRename(e.target, state.current.rel); }
   });
-  $("cmp-close").addEventListener("click", closeCmp);
-  $("cmp-mode").addEventListener("click", cmpSetMode);
-  $("cmp-swap").addEventListener("click", cmpSwap);
-  const hold = $("cmp-hold");
-  const holdOn = (e) => { e.preventDefault(); cmpShow("b"); };
-  const holdOff = () => cmpShow("a");
-  hold.addEventListener("pointerdown", holdOn);
-  hold.addEventListener("pointerup", holdOff);
-  hold.addEventListener("pointerleave", holdOff);
-  hold.addEventListener("pointercancel", holdOff);
-  // 在按钮外松手也要回 A（拖出按钮后 pointerup 不会回到按钮上）
-  window.addEventListener("pointerup", holdOff);
-  window.addEventListener("blur", holdOff);
-  document.addEventListener("keyup", (e) => { if (e.key === " ") holdOff(); });
-  window.addEventListener("resize", () => { if (!$("cmp").hidden) cmpFit(); });
+  // 比对弹层的绑定：模板有可能是旧的（服务没重启），元素不存在时别把后面的绑定一起带走
+  if ($("cmp") && $("cmp-hold")) {
+    $("cmp-close").addEventListener("click", closeCmp);
+    $("cmp-mode").addEventListener("click", cmpSetMode);
+    $("cmp-swap").addEventListener("click", cmpSwap);
+    const hold = $("cmp-hold");
+    const holdOn = (e) => { e.preventDefault(); cmpShow("b"); };
+    const holdOff = () => cmpShow("a");
+    hold.addEventListener("pointerdown", holdOn);
+    hold.addEventListener("pointerup", holdOff);
+    hold.addEventListener("pointerleave", holdOff);
+    hold.addEventListener("pointercancel", holdOff);
+    // 在按钮外松手也要回 A（拖出按钮后 pointerup 不会回到按钮上）
+    window.addEventListener("pointerup", holdOff);
+    window.addEventListener("blur", holdOff);
+    document.addEventListener("keyup", (e) => { if (e.key === " ") holdOff(); });
+    window.addEventListener("resize", () => { if (!$("cmp").hidden) cmpFit(); });
+  }
   $("btn-trash-file").addEventListener("click", () => doTrash(state.current));
   const btnPlace = $("btn-place-file");
   if (btnPlace) btnPlace.addEventListener("click", () => { if (state.current) openTagsModal("place", state.current); });
@@ -2945,7 +2949,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (!$("cmp").hidden) { closeCmp(); return; }
+      if ($("cmp") && !$("cmp").hidden) { closeCmp(); return; }
       if (!$("modal-newtag").hidden) { $("modal-newtag").hidden = true; return; }
       if (!$("modal-tags").hidden || !$("modal-rename").hidden || !$("modal-upload").hidden) {
         $("modal-tags").hidden = $("modal-rename").hidden = $("modal-upload").hidden = true;
@@ -2955,7 +2959,7 @@ function bindEvents() {
       if (!$("inspector").hidden) { closeInspector(); clearSelection(true); syncCardClasses(); return; }
       $("drawer").hidden = true;
     }
-    if (!$("cmp").hidden) {
+    if ($("cmp") && !$("cmp").hidden) {
       if (e.key === " ") { e.preventDefault(); if (!e.repeat) cmpShow("b"); return; }
       if (e.key === "1") { cmpShow("a"); return; }
       if (e.key === "2") { cmpShow("b"); return; }
