@@ -2773,6 +2773,10 @@ def api_dupe_chars():
         a["groups"] = len(groups)
         a["exact"] = sum(1 for g in groups if g.get("exact"))
         a["built_at"] = block.get("built_at") or ""
+        # 检测过的角色用「实际参与检测的张数」，跟组页保持一致（过滤词可能排除了一批）
+        if block.get("files"):
+            a["files"] = block["files"]
+        a["excluded"] = block.get("excluded") or 0
     out = sorted(agg.values(), key=lambda x: (-x["groups"], -x["files"]))
     return jsonify({"ok": True, "items": out, "running": _dupe_running(), "job": _DUPE_JOB.get("char", ""),
                     "batch": _batch_state()})

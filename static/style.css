@@ -389,12 +389,13 @@ input:focus, select:focus { border-color: var(--accent); }
 .dupe-opt select { padding: 3px 6px; font-size: 12px; }
 
 .dupe-list { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
-.dupe-row { display: grid; grid-template-columns: 1fr 90px 1fr 150px auto; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.dupe-row { display: grid; grid-template-columns: 1fr 112px 1fr 150px auto; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .dupe-row:last-child { border-bottom: none; }
 .dupe-row:hover { background: var(--panel2); }
 .dupe-row.has .dupe-grp { color: var(--red); font-weight: 600; }
 .dupe-char { font-weight: 600; }
 .dupe-num, .dupe-time { color: var(--mut); font-size: 12px; }
+.dupe-ex { font-style: normal; color: var(--mut2); margin-left: 3px; font-size: 11px; }
 .dupe-grp { color: var(--mut); font-size: 12px; }
 .dupe-acts { display: flex; gap: 6px; justify-content: flex-end; }
 

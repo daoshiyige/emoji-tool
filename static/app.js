@@ -1943,7 +1943,7 @@ async function renderDupeChars() {
       ${data.items.map((it) => `
         <div class="dupe-row${it.groups ? " has" : ""}" data-char="${esc(it.char)}">
           <span class="dupe-char">${esc(it.char)}</span>
-          <span class="dupe-num">${fmtCount(it.files)} 张</span>
+          <span class="dupe-num" title="${it.excluded ? `已排除 ${it.excluded} 张过滤词命中的图` : ""}">${fmtCount(it.files)} 张${it.excluded ? `<i class="dupe-ex">−${fmtCount(it.excluded)}</i>` : ""}</span>
           <span class="dupe-grp">${it.built_at ? (it.groups ? `${it.groups} 组${it.exact ? `（${it.exact} 组完全相同）` : ""}` : "无重复") : "未检测"}</span>
           <span class="dupe-time">${esc(it.built_at || "")}</span>
           <span class="dupe-acts">
