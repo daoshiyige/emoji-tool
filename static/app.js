@@ -1872,11 +1872,16 @@ async function renderTrash() {
 const DUPE_OPTS_KEY = "emojiTool.dupeOpts.v1";
 
 function dupeOpts() {
-  const d = { th: 8, cos: 0.85, words: "差分" };
+  const d = { th: 8, cos: 0.85, words: "差分", mode: "file" };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(DUPE_OPTS_KEY) || "{}")); }
   catch (e) { return d; }
 }
 function dupeSaveOpts(o) { try { localStorage.setItem(DUPE_OPTS_KEY, JSON.stringify(o)); } catch (e) {} }
+
+function dupeWordList(v) {
+  if (Array.isArray(v)) v = v.join(",");
+  return String(v || "").split(/[,，、;；/\s]+/).map((s) => s.trim()).filter(Boolean);
+}
 
 function dupeSize(n) {
   if (!n) return "-";
@@ -1913,9 +1918,19 @@ async function renderDupeChars() {
       <span class="dupe-hint">只在同一个角色的文件之间比对；点「检测」现算这个角色。</span>
       <label class="dupe-opt">阈值 <select id="dupe-th">${[4, 6, 8, 10, 12].map((v) => `<option value="${v}"${v === o.th ? " selected" : ""}>${v}</option>`).join("")}</select></label>
       <label class="dupe-opt">相似度 ≥ <select id="dupe-cos">${[0.8, 0.85, 0.9, 0.95].map((v) => `<option value="${v}"${v === o.cos ? " selected" : ""}>${v}</option>`).join("")}</select></label>
-      <label class="dupe-opt dupe-wordbox" title="两侧路径都含其中任一个词就不互相比较（差分 vs 原图仍会检出）。逗号、空格分隔；留空 = 不过滤">过滤词
-        <input id="dupe-words" type="text" value="${esc(o.words)}" placeholder="差分" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="dupe-bar dupe-filter">
+      <span class="df-label">过滤词</span>
+      <div class="word-edit" id="dupe-wordbox">
+        <input id="dupe-word-in" type="text" placeholder="输入后回车添加（可粘贴多个）" autocomplete="off" spellcheck="false">
+      </div>
+      <label class="dupe-opt">处理方式
+        <select id="dupe-mode">
+          <option value="file">命中即排除（不参与检测）</option>
+          <option value="pair">只跳过互比（保留差分 vs 原图）</option>
+        </select>
       </label>
+      <span class="df-note" id="df-note"></span>
       <span class="dupe-warn" id="dupe-warn" hidden>改动需重测生效</span>
     </div>
     <div class="batch-bar" id="dupe-batch">
@@ -1942,14 +1957,12 @@ async function renderDupeChars() {
     const opts = dupeOpts();
     opts.th = Number($("dupe-th").value) || 8;
     opts.cos = Number($("dupe-cos").value) || 0.85;
-    opts.words = $("dupe-words").value.trim();
     dupeSaveOpts(opts);
     return opts;
   };
-  $("dupe-th").addEventListener("change", () => { readOpts(); $("dupe-warn").hidden = false; });
-  $("dupe-cos").addEventListener("change", () => { readOpts(); $("dupe-warn").hidden = false; });
-  $("dupe-words").addEventListener("input", readOpts);
-  $("dupe-words").addEventListener("change", () => { $("dupe-warn").hidden = false; });
+  $("dupe-th").addEventListener("change", () => { readOpts(); markDirty(); });
+  $("dupe-cos").addEventListener("change", () => { readOpts(); markDirty(); });
+  setupDupeFilter();
 
   grid.querySelectorAll(".dupe-row").forEach((row) => {
     const ch = row.dataset.char;
@@ -1965,6 +1978,88 @@ async function renderDupeChars() {
     batchWasRunning = true;
     if (!batchPoll) batchPoll = setInterval(refreshBatch, 2000);
   }
+}
+
+/* ---- 过滤词编辑（chip 列表） ---- */
+function markDirty() { const w = $("dupe-warn"); if (w) w.hidden = false; }
+
+function applyWordList(list) {
+  const uniq = [];
+  list.forEach((w) => {
+    const t = String(w || "").trim();
+    if (t && !uniq.some((x) => x.toLowerCase() === t.toLowerCase())) uniq.push(t);
+  });
+  const opts = dupeOpts();
+  opts.words = uniq.slice(0, 8).join(",");
+  dupeSaveOpts(opts);
+  renderWordBox(uniq);
+  updateFilterNote();
+  markDirty();
+}
+
+function renderWordBox(words) {
+  const box = $("dupe-wordbox");
+  if (!box) return;
+  box.querySelectorAll(".word-chip").forEach((n) => n.remove());
+  const inp = $("dupe-word-in");
+  words.forEach((w) => {
+    const chip = document.createElement("span");
+    chip.className = "word-chip";
+    chip.innerHTML = `<span>${esc(w)}</span><i title="删除这个过滤词">×</i>`;
+    const x = chip.querySelector("i");
+    x.addEventListener("mousedown", (e) => e.preventDefault()); // 别让输入框先失焦
+    x.addEventListener("click", () => applyWordList(dupeWordList(dupeOpts().words).filter((it) => it !== w)));
+    box.insertBefore(chip, inp);
+  });
+}
+
+function updateFilterNote() {
+  const n = $("df-note");
+  if (!n) return;
+  const o = dupeOpts();
+  const ws = dupeWordList(o.words);
+  if (!ws.length) {
+    n.className = "df-note warn";
+    n.textContent = "没设过滤词：差分之间也会互比，结果会很多";
+    return;
+  }
+  n.className = "df-note";
+  n.textContent = o.mode === "pair"
+    ? `只有两张都含「${ws.join("、")}」才跳过互比（差分 vs 原图仍会报）`
+    : `路径含「${ws.join("、")}」的图完全不参与检测`;
+}
+
+function setupDupeFilter() {
+  const o = dupeOpts();
+  renderWordBox(dupeWordList(o.words));
+  const sel = $("dupe-mode");
+  if (!sel) return;
+  sel.value = o.mode === "pair" ? "pair" : "file";
+  updateFilterNote();
+
+  const inp = $("dupe-word-in");
+  const commit = () => {
+    const v = inp.value.trim();
+    if (!v) return;
+    inp.value = "";
+    applyWordList(dupeWordList(dupeOpts().words).concat(dupeWordList(v)));
+  };
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "," || e.key === "，" || e.key === "、") { e.preventDefault(); commit(); }
+    else if (e.key === "Backspace" && !inp.value) {
+      const cur = dupeWordList(dupeOpts().words);
+      if (cur.length) { e.preventDefault(); cur.pop(); applyWordList(cur); }
+    }
+  });
+  inp.addEventListener("blur", commit);
+  inp.addEventListener("paste", () => setTimeout(commit, 0));
+  sel.addEventListener("change", () => {
+    const opts = dupeOpts();
+    opts.mode = sel.value === "pair" ? "pair" : "file";
+    dupeSaveOpts(opts);
+    updateFilterNote();
+    markDirty();
+  });
 }
 
 /* ---- 静默检测（全库 · 后台低优先级） ---- */
@@ -2007,7 +2102,7 @@ function renderBatch(b) {
 async function dupeBatchStart() {
   const o = dupeOpts();
   try {
-    await api("/api/dupe/batch", { method: "POST", body: JSON.stringify({ th: o.th, cos: o.cos, words: o.words }) });
+    await api("/api/dupe/batch", { method: "POST", body: JSON.stringify({ th: o.th, cos: o.cos, words: o.words, mode: o.mode }) });
   } catch (e) { toast(e.message, "error"); return; }
   toast("静默检测已启动，可以去干别的");
   batchWasRunning = true;
@@ -2045,7 +2140,7 @@ async function refreshBatch() {
 async function dupeScan(char) {
   const o = dupeOpts();
   try {
-    await api("/api/dupe/scan", { method: "POST", body: JSON.stringify({ char, th: o.th, cos: o.cos, words: o.words }) });
+    await api("/api/dupe/scan", { method: "POST", body: JSON.stringify({ char, th: o.th, cos: o.cos, words: o.words, mode: o.mode }) });
   } catch (e) { toast(e.message, "error"); return; }
   toast(`正在检测 ${char}…`);
   $("nav-dupes").textContent = "…";
@@ -2073,10 +2168,13 @@ async function renderDupeGroups(char) {
   $("nav-dupes").textContent = groups.length ? fmtCount(groups.length) : "";
 
   const w = (data.skip_words || []).join("、");
+  const modeTxt = data.skip_mode === "pair"
+    ? "仅跳过互比"
+    : (data.excluded ? `已排除 ${fmtCount(data.excluded)} 张` : "命中即排除");
   const head = `<div class="dupe-bar">
       <button class="btn ghost small" id="dupe-back">← 返回角色</button>
       <span class="dupe-hint">${esc(char)}${data.built_at ? " · 检测于 " + esc(data.built_at) : " · 还没检测"}</span>
-      <span class="dupe-opt">过滤词 <b class="dupe-wordval">${w ? esc(w) : "无"}</b></span>
+      <span class="dupe-opt">过滤 <b class="dupe-wordval">${w ? esc(w) : "无"}</b>${w ? " · " + modeTxt : ""}</span>
       <button class="btn ghost small" id="dupe-rescan">重新检测</button>
     </div>`;
 

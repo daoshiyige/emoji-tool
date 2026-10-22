@@ -70,7 +70,8 @@ def load_cfg():
     th = int(cfg.get("dupe_threshold") or 8)
     cos = float(cfg.get("dupe_cos") or 0.85)
     words = dupes.split_words(cfg.get("dupe_skip_words", "差分"))
-    return th, cos, words
+    mode = cfg.get("dupe_skip_mode", "file")
+    return th, cos, words, ("file" if mode == "file" else "pair")
 
 
 def main():
@@ -81,14 +82,16 @@ def main():
     ap.add_argument("--th", type=int, default=None)
     ap.add_argument("--cos", type=float, default=None)
     ap.add_argument("--skip-words", default=None)
+    ap.add_argument("--skip-mode", default=None, choices=["pair", "file"])
     ap.add_argument("--workers", type=int, default=int(os.environ.get("DUPE_WORKERS", "3")))
     ap.add_argument("--gap", type=float, default=float(os.environ.get("DUPE_GAP", "0.6")))
     args = ap.parse_args()
 
-    d_th, d_cos, d_words = load_cfg()
+    d_th, d_cos, d_words, d_mode = load_cfg()
     th = args.th if args.th is not None else d_th
     cos = args.cos if args.cos is not None else d_cos
     words = dupes.split_words(args.skip_words) if args.skip_words is not None else d_words
+    mode = args.skip_mode or d_mode
 
     ML.mkdir(exist_ok=True)
     if STOP.exists():
@@ -98,7 +101,7 @@ def main():
     st = {"running": True, "pid": os.getpid(), "phase": "prepare", "char": "",
           "done": 0, "total": 0, "skipped": 0, "groups": 0, "files": 0,
           "started": time.time(), "updated": time.time(), "low_priority": low,
-          "th": th, "cos": cos, "words": words, "stopped": False, "error": ""}
+          "th": th, "cos": cos, "words": words, "mode": mode, "stopped": False, "error": ""}
     write_state(st)
     start_heartbeat()
 
@@ -119,7 +122,7 @@ def main():
             if len(files) < 2:
                 skipped += 1
                 continue
-            sig = dupes.file_sig(files, th, cos, words)
+            sig = dupes.file_sig(files, th, cos, words, mode)
             prev = data.get(c) or {}
             if not args.all and prev.get("built_at") and prev.get("sig") == sig:
                 skipped += 1
@@ -148,7 +151,7 @@ def main():
             write_state(st)
 
             try:
-                res = dupes.scan_char(c, th=th, cos_th=cos, workers=args.workers, skip_words=words,
+                res = dupes.scan_char(c, th=th, cos_th=cos, workers=args.workers, skip_words=words, skip_mode=mode,
                                       files=groups.get(c), cache=cache, clip=clip,
                                       save_cache=False, quiet=True)
             except Exception as e:  # noqa: BLE001 单个角色炸了不影响整批

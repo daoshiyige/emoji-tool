@@ -414,8 +414,18 @@ input:focus, select:focus { border-color: var(--accent); }
 .dupe-ops { display: flex; gap: 6px; }
 .dupe-ops .btn { padding: 3px 8px; font-size: 12px; }
 
-/* 过滤词 */
-.dupe-wordbox input { width: 150px; padding: 3px 7px; font-size: 12px; }
+/* 过滤词（chip 列表） */
+.dupe-filter { gap: 12px; }
+.df-label { font-size: 12px; color: var(--mut); font-weight: 600; flex: none; }
+.word-edit { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: 1 1 320px; min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.word-edit:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.word-edit input { flex: 1 1 130px; min-width: 110px; border: none; padding: 3px 2px; background: transparent; font-size: 12px; box-shadow: none; }
+.word-edit input:focus { border: none; }
+.word-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent2); font-size: 12px; font-weight: 600; }
+.word-chip i { font-style: normal; cursor: pointer; width: 15px; height: 15px; line-height: 14px; text-align: center; border-radius: 50%; color: var(--accent2); }
+.word-chip i:hover { background: var(--accent); color: #fff; }
+.df-note { font-size: 11px; color: var(--mut2); flex: 1 1 220px; }
+.df-note.warn { color: var(--yellow); }
 .dupe-wordval { color: var(--txt); font-weight: 600; }
 .dupe-warn { font-size: 11px; color: var(--yellow); }
 

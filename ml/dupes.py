@@ -175,31 +175,42 @@ def hits(rel, words):
     return any(w in s for w in words)
 
 
-def file_sig(files, th, cos_th, words):
+def file_sig(files, th, cos_th, words, skip_mode="pair"):
     """签名 = 文件集合 + 检测参数。只有它变了才值得重跑（静默检测用它跳过）。"""
     if not files:
-        return {"n": 0, "mt": 0, "th": th, "cos": cos_th, "w": "|".join(words)}
+        return {"n": 0, "mt": 0, "th": th, "cos": cos_th, "w": "|".join(words), "m": skip_mode}
     return {
         "n": len(files),
         "mt": int(max(f["mtime"] for f in files)),
-        "th": th, "cos": cos_th, "w": "|".join(words),
+        "th": th, "cos": cos_th, "w": "|".join(words), "m": skip_mode,
     }
 
 
-def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",),
+def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",), skip_mode="pair",
               files=None, cache=None, clip=None, save_cache=True, quiet=False):
     """扫一个角色。
 
     files / cache / clip 可由批量入口预先加载后传进来，省掉反复读库、读 JSON、读向量；
     save_cache=False 时哈希缓存不落盘（批量跑完统一写，避免每个角色都写几 MB）。
+
+    skip_mode:
+      file —— 命中过滤词的文件不参与检测（结果里彻底看不到它们）
+      pair —— 只有一对图两侧都命中才跳过互比（「差分 vs 原图」这种真重复仍会报）
     """
     files = list(files) if files is not None else [f for f in load_files(char)]
     words = [w.lower() for w in (skip_words or []) if w]
-    sig = file_sig(files, th, cos_th, words)
+    skip_mode = "file" if skip_mode == "file" else "pair"
+    excluded = 0
+    if words and skip_mode == "file":
+        kept = [f for f in files if not hits(f["rel"], words)]
+        excluded = len(files) - len(kept)
+        files = kept
+    sig = file_sig(files, th, cos_th, words, skip_mode)
 
     def empty():
         return {"char": char, "groups": [], "built_at": time.strftime("%Y-%m-%d %H:%M"),
-                "th": th, "cos": cos_th, "files": len(files), "skip_words": words, "sig": sig}
+                "th": th, "cos": cos_th, "files": len(files), "skip_words": words,
+                "skip_mode": skip_mode, "excluded": excluded, "sig": sig}
 
     if len(files) < 2:
         return empty()
@@ -277,7 +288,11 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",),
                 by_hash.setdefault(h, []).append(r)
         for same in by_hash.values():
             for k in range(1, len(same)):
-                md5_pairs.append((pos[same[0]], pos[same[k]]))
+                i, j = pos[same[0]], pos[same[k]]
+                # md5 连起来的也守同一条规则，否则「完全相同的两张差分图」照样成组
+                if skip_mode == "pair" and words and hits(rels[i], words) and hits(rels[j], words):
+                    continue
+                md5_pairs.append((i, j))
     if md5_pairs:
         print("  完全相同的对：%d" % len(md5_pairs), flush=True)
 
@@ -325,7 +340,8 @@ def scan_char(char, th=8, cos_th=0.85, workers=8, skip_words=("差分",),
 
     return {
         "char": char, "built_at": time.strftime("%Y-%m-%d %H:%M"), "th": th, "cos": cos_th,
-        "files": len(files), "skip_words": words, "groups": groups, "sig": sig,
+        "files": len(files), "skip_words": words, "skip_mode": skip_mode,
+        "excluded": excluded, "groups": groups, "sig": sig,
     }
 
 
@@ -334,7 +350,9 @@ def main():
     ap.add_argument("--char", default="")
     ap.add_argument("--th", type=int, default=8)
     ap.add_argument("--cos", type=float, default=0.85)
-    ap.add_argument("--skip-words", default="差分", help="逗号分隔；一对图两侧都命中则跳过，空串=不过滤")
+    ap.add_argument("--skip-words", default="差分", help="逗号分隔；命中过滤词的文件怎么处理见 --skip-mode")
+    ap.add_argument("--skip-mode", default="pair", choices=["pair", "file"],
+                    help="pair=两侧都命中才跳过互比；file=命中即不参与检测")
     ap.add_argument("--workers", type=int, default=int(os.environ.get("DUPE_WORKERS", "8")))
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
@@ -351,12 +369,13 @@ def main():
         return 2
 
     res = scan_char(args.char, th=args.th, cos_th=args.cos, workers=args.workers,
-                    skip_words=split_words(args.skip_words))
+                    skip_words=split_words(args.skip_words), skip_mode=args.skip_mode)
     data = load_json(DUPES_JSON, {})
     data[args.char] = res
     save_json(DUPES_JSON, data)
-    print("完成：%s，%d 张图，%d 组（过滤词：%s）" % (
-        args.char, res.get("files", 0), len(res["groups"]), "、".join(res.get("skip_words") or []) or "无"), flush=True)
+    print("完成：%s，%d 张图（排除 %d），%d 组（过滤词：%s / %s）" % (
+        args.char, res.get("files", 0), res.get("excluded", 0), len(res["groups"]),
+        "、".join(res.get("skip_words") or []) or "无", args.skip_mode), flush=True)
     return 0
 
 

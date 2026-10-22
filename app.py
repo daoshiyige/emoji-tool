@@ -2732,7 +2732,7 @@ def _char_of(folder):
 
 
 def _dupe_words(raw):
-    """过滤词：一对图两侧都命中才跳过。空串表示不过滤。"""
+    """过滤词：命中后怎么处理见 _dupe_skip_mode。空串表示不过滤。"""
     if raw is None:
         raw = CONFIG.get("dupe_skip_words", "差分")
     if isinstance(raw, (list, tuple)):
@@ -2745,6 +2745,12 @@ def _dupe_words(raw):
         if w and w.lower() not in [x.lower() for x in out]:
             out.append(w[:24])
     return ",".join(out[:8])
+
+
+def _dupe_skip_mode(raw):
+    """file = 命中即排除（不参与检测）；pair = 两侧都命中才跳过互比。"""
+    v = str(raw if raw is not None else CONFIG.get("dupe_skip_mode", "file")).strip().lower()
+    return "pair" if v == "pair" else "file"
 
 
 @app.get("/api/dupe/chars")
@@ -2799,6 +2805,7 @@ def api_dupe_scan():
         except (TypeError, ValueError):
             args += ["--cos", "0.85"]
         args += ["--skip-words", _dupe_words(data.get("words"))]
+        args += ["--skip-mode", _dupe_skip_mode(data.get("mode"))]
         env = os.environ.copy()
         env["DUPE_WORKERS"] = "4"
         log = open(str(ML_DIR / "dupes.log"), "ab")
@@ -2862,6 +2869,8 @@ def api_dupe_list():
         "ok": True, "char": ch, "built_at": block.get("built_at") or "",
         "th": block.get("th"), "cos": block.get("cos"), "files": block.get("files") or 0,
         "skip_words": block.get("skip_words") or [],
+        "skip_mode": block.get("skip_mode") or "pair",
+        "excluded": block.get("excluded") or 0,
         "groups": out,
     })
 
@@ -2902,6 +2911,7 @@ def api_dupe_batch():
     except (TypeError, ValueError):
         args += ["--cos", "0.85"]
     args += ["--skip-words", _dupe_words(data.get("words"))]
+    args += ["--skip-mode", _dupe_skip_mode(data.get("mode"))]
     if data.get("all"):
         args.append("--all")
     try:
