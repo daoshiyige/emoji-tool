@@ -775,7 +775,9 @@ def detect_artist_from_filename(name):
     # 避免「画师-作品ID-日期-序号」被贪婪地整段当成画师名（如 rocktide_-1869…-20241218-01）。
     # 注意：下划线可能是画师名的一部分（rocktide_ / dit_dit_），只去掉首尾空格与连字符。
     # 优先于已知名单弱信号，避免「あ@-pid_p0」被拆成别名「あ」
-    id_seg = re.compile(r"^\d{5,}(?:_p\d+)?$")
+    # 作品 ID 段本身允许带「(3)」这类重复下载括号（どうむ-147535801_p1(3).png）——
+    # 括号在 is_tail_seg 里本来就算尾段，但 ID 段在第一位，必须单独放行，否则整条识别不到。
+    id_seg = re.compile(r"^\d{5,}(?:_p\d+)?(?:[（(]\d{1,3}[)）])?$")
     segs = stem.split("-")
     for i in range(1, len(segs)):
         rest = segs[i:]
