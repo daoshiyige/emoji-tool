@@ -33,7 +33,9 @@ except Exception:  # 未安装 pypinyin 时降级为不支持拼音
 BASE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_CONFIG = {
-    "root": r"F:\BA\表情包",
+    # 库路径必须显式配置（config.local.json 的 root，或环境变量 EMOJI_ROOT）。
+    # 代码里不留任何默认库路径——否则换机器/换盘就得改代码，谈不上可移植。
+    "root": "",
     "exclude_dirs": ["杂图", "未处理"],
     "exclude_segments": ["语音"],
     "image_exts": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
@@ -66,38 +68,118 @@ DEFAULT_CONFIG = {
 
 CONFIG = dict(DEFAULT_CONFIG)
 CONFIG_PATH = BASE_DIR / "config.json"
-if CONFIG_PATH.exists():
-    try:
-        CONFIG.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-    except Exception as exc:
-        print("config.json 解析失败，使用默认配置:", exc)
+LOCAL_CONFIG_PATH = BASE_DIR / "config.local.json"
 
-ROOT = Path(CONFIG["root"]).resolve()
-DB_PATH = BASE_DIR / "library.db"
-THUMB_DIR = BASE_DIR / "cache" / "thumbs"
-TRASH_DIR = BASE_DIR / "trash"
+
+def _merge_config():
+    """config.json（进 git 的默认值）→ config.local.json（本机覆盖，gitignore）。"""
+    for p in (CONFIG_PATH, LOCAL_CONFIG_PATH):
+        if not p.exists():
+            continue
+        try:
+            CONFIG.update(json.loads(p.read_text(encoding="utf-8")))
+        except Exception as exc:  # noqa: BLE001
+            print("%s 解析失败，跳过:" % p.name, exc)
+
+
+_merge_config()
+
+
+def _abs_path(raw, base):
+    """配置里的路径：支持 %VAR% / ~，相对路径按 base 解析。"""
+    p = Path(os.path.expandvars(os.path.expanduser(str(raw or "").strip())))
+    if not p.is_absolute():
+        p = base / p
+    return p.resolve()
+
+
+def _resolve_root():
+    """库路径（图片库根目录）：EMOJI_ROOT 环境变量 > config.local.json > config.json。
+
+    没配就直接退出并说清楚怎么配——比默默扫错目录好。库路径是每次启动现算的，
+    所以换库/搬盘只需要改配置，不用碰代码。
+    """
+    raw = os.environ.get("EMOJI_ROOT") or CONFIG.get("root") or ""
+    if not str(raw).strip():
+        print("=" * 64)
+        print("还没配置库路径。二选一：")
+        print('  1) 在 %s 里写 {"root": "D:\\\\你的\\\\表情包库"}' % LOCAL_CONFIG_PATH.name)
+        print("  2) 设环境变量 EMOJI_ROOT 后启动")
+        print("=" * 64)
+        raise SystemExit(2)
+    p = _abs_path(raw, BASE_DIR)
+    if not p.is_dir():
+        print("库路径不存在：%s" % p)
+        print("改 %s 的 root，或设 EMOJI_ROOT 后重启。" % LOCAL_CONFIG_PATH.name)
+        raise SystemExit(2)
+    return p
+
+
+ROOT = _resolve_root()
+
+
+def _resolve_data_dir():
+    """运行数据目录（索引/缩略图/模型/日志）。
+
+    优先级：EMOJI_DATA 环境变量 > config.local.json 的 data_dir > 项目目录。
+    指向的目录里还没有 library.db（迁移没做/做了一半）就退回项目目录并提示，
+    免得「配了新目录但数据没搬」直接变成空库、看起来像数据没了。
+    """
+    raw = os.environ.get("EMOJI_DATA") or CONFIG.get("data_dir") or ""
+    if not str(raw).strip():
+        return BASE_DIR
+    target = _abs_path(raw, BASE_DIR)
+    if not (target / "library.db").exists() and (BASE_DIR / "library.db").exists():
+        print("[!] 数据目录 %s 里还没有 library.db，暂时沿用项目目录" % target)
+        print("    迁移：python tools/migrate_data.py --apply")
+        return BASE_DIR
+    return target
+
+
+DATA_DIR = _resolve_data_dir()
+DB_PATH = DATA_DIR / "library.db"
+THUMB_DIR = DATA_DIR / "cache" / "thumbs"
+
+
+def _resolve_trash_dir():
+    """废纸篓默认放库根的 .trash：和图片同盘，移动走 rename 秒级完成、不占额外空间，
+    库搬走时废纸篓跟着走。要放别处就配 trash_dir。
+
+    老位置（项目目录 trash/）还在、新位置还没建时先沿用老的，避免迁移前
+    「废纸篓突然空了、删图又新建一个」。迁移脚本会把老目录整体搬过去。
+    """
+    raw = os.environ.get("EMOJI_TRASH") or CONFIG.get("trash_dir") or ""
+    if str(raw).strip():
+        return _abs_path(raw, ROOT)
+    target = ROOT / ".trash"
+    legacy = BASE_DIR / "trash"
+    if not target.exists() and legacy.exists():
+        return legacy
+    return target
+
+
+TRASH_DIR = _resolve_trash_dir()
 
 _CONFIG_MTIME = None
 
 
 def reload_config():
-    """config.json 被修改后自动热加载（按文件 mtime 判断），并清空相关缓存。"""
+    """config.json / config.local.json 改动后热加载（按 mtime）。
+
+    注意：root / data_dir / trash_dir 是启动时解析的模块级路径，改了要重启服务才生效。
+    """
     global _CONFIG_MTIME
     try:
-        m = CONFIG_PATH.stat().st_mtime
+        m = tuple(p.stat().st_mtime if p.exists() else 0.0
+                  for p in (CONFIG_PATH, LOCAL_CONFIG_PATH))
     except OSError:
         return
     if _CONFIG_MTIME == m:
         return
     _CONFIG_MTIME = m
-    try:
-        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        print("config.json 解析失败，沿用当前配置:", exc)
-        return
     CONFIG.clear()
     CONFIG.update(DEFAULT_CONFIG)
-    CONFIG.update(data)
+    _merge_config()
     invalidate_tags()
 
 TRASH_EXPIRE_DAYS = int(os.environ.get("EMOJI_TRASH_EXPIRE_DAYS", "30"))
@@ -106,7 +188,7 @@ IMG_EXTS = set(CONFIG["image_exts"])
 
 INBOX_NAME = "未处理"
 
-MOVE_LOG = BASE_DIR / "moves.log"
+MOVE_LOG = DATA_DIR / "moves.log"
 
 
 def _log_move(action, old_rel, new_rel=""):
@@ -359,6 +441,9 @@ def collect_folder_artist_names():
     """扫描目录名，收集出现在画师文件夹位置上的名字（不含 denylist 类型名）。"""
     names = set()
     for dirpath, dirnames, _ in os.walk(ROOT):
+        # 库根下的 .trash / .emoji-tool 这类点目录一律不深入（废纸篓里的
+        # 「差分/1（画师）」也在库根，不排除会把画师名混进来）
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         parts = os.path.relpath(dirpath, ROOT).split(os.sep)
         if parts[0] != ".":
             if any(p in CONFIG["exclude_segments"] or p.startswith(".") for p in parts):
@@ -1520,7 +1605,7 @@ def _trash_overwritten(dst):
             dst_trash = cand
             break
         n += 1
-    dst.rename(dst_trash)
+    _safe_move(dst, dst_trash)
     trash_rel = dst_trash.relative_to(TRASH_DIR).as_posix()
     if query_one("SELECT 1 FROM files WHERE rel=?", (orig_rel,)):
         execute(
@@ -1533,6 +1618,24 @@ def _trash_overwritten(dst):
     delete_thumb(orig_rel)
 
 
+def _safe_move(src, dst, copy=False):
+    """移动文件：同盘用 rename（瞬间、不改 mtime），跨盘退化成 shutil.move。
+
+    废纸篓默认在库根（同盘），一般走不到复制分支；但只要有人把 trash_dir 或
+    data_dir 配到别的盘，rename 就会抛 WinError 17，这里兜住。
+    """
+    src = Path(src)
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if copy:
+        shutil.copy2(str(src), str(dst))
+        return
+    try:
+        src.rename(dst)
+    except OSError:
+        shutil.move(str(src), str(dst))
+
+
 def _move_file(src, dst, copy=False):
     """移动/复制 src 到 dst；若 dst 已有同名文件，先将其移入废纸篓再覆盖。
     源与目标为同一文件时不做任何操作。"""
@@ -1542,10 +1645,7 @@ def _move_file(src, dst, copy=False):
         return
     if dst.exists():
         _trash_overwritten(dst)
-    if copy:
-        shutil.copy2(str(src), str(dst))
-    else:
-        src.rename(dst)
+    _safe_move(src, dst, copy=copy)
 
 
 def purge_expired_trash():
@@ -1573,11 +1673,47 @@ def index():
     return render_template("index.html")
 
 
+@app.post("/api/config/root")
+def api_set_root():
+    """改库路径：只写进 config.local.json（不进 git），路径校验通过才落盘。
+
+    ROOT 是启动时解析的模块级变量，DB / 索引 / 缩略图都基于它，所以改完必须重启；
+    重启后如果新库和旧库结构不同，再点一次「扫描」重建索引。
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    raw = str(data.get("root") or "").strip()
+    if not raw:
+        return jsonify({"ok": False, "error": "路径不能为空"}), 400
+    p = _abs_path(raw, BASE_DIR)
+    if not p.is_dir():
+        return jsonify({"ok": False, "error": "目录不存在：%s" % p}), 400
+    if not any(x.is_dir() for x in p.iterdir()):
+        return jsonify({"ok": False, "error": "这个目录是空的，不像是表情包库：%s" % p}), 400
+
+    cfg = {}
+    if LOCAL_CONFIG_PATH.exists():
+        try:
+            cfg = json.loads(LOCAL_CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            cfg = {}
+    cfg["root"] = str(p)
+    try:
+        LOCAL_CONFIG_PATH.write_text(
+            json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        return jsonify({"ok": False, "error": "写配置失败：%s" % exc}), 500
+    return jsonify({"ok": True, "root": str(p), "need_restart": True,
+                    "config_local": str(LOCAL_CONFIG_PATH)})
+
+
 @app.get("/api/config")
 def api_config():
     reload_config()
     return jsonify({
         "root": str(ROOT),
+        "data_dir": str(DATA_DIR),
+        "trash_dir": str(TRASH_DIR),
+        "config_local": str(LOCAL_CONFIG_PATH),
         "port": CONFIG["port"],
         "artist_min_files": CONFIG["artist_min_files"],
         "artist_threshold_ratio": CONFIG["artist_threshold_ratio"],
@@ -1672,7 +1808,8 @@ def api_facets():
     return jsonify(out)
 
 
-ML_DIR = BASE_DIR / "ml"
+ML_DIR = DATA_DIR / "ml"        # 数据：模型 / 向量 / 缓存 / 结果
+ML_CODE = BASE_DIR / "ml"       # 代码：embed.py / dupes.py / dupes_batch.py
 _ML = {"key": None, "dim": 0, "classes": [], "centroids": [], "rows": None, "fh": None}
 _ML_LOCK = threading.Lock()
 
@@ -1766,12 +1903,13 @@ def _ml_ensure_indexed(rels):
     if now - _ML_JOB.get("started", 0.0) < 20:      # 防抖，别反复起进程
         return True
     py = _ml_python()
-    script = ML_DIR / "embed.py"
+    script = ML_CODE / "embed.py"
     if not py or not script.exists():
         return False
     try:
         env = os.environ.copy()
         env["EMBED_WORKERS"] = "2"
+        env["EMOJI_DATA"] = str(DATA_DIR)
         log = open(str(ML_DIR / "embed.log"), "ab")
         flags = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW
         _ML_JOB["proc"] = subprocess.Popen(
@@ -1977,7 +2115,7 @@ def api_trash():
     if dst.exists():
         stem = dst.stem + "_" + str(int(time.time()))
         dst = dst.with_name(stem + dst.suffix)
-    src.rename(dst)
+    _safe_move(src, dst)
     mark_trashed(rel, dst)
     invalidate_tags()
     return jsonify({"ok": True, "trash_rel": dst.relative_to(TRASH_DIR).as_posix()})
@@ -2056,7 +2194,7 @@ def api_restore_batch():
             failed += 1
             continue
         src.parent.mkdir(parents=True, exist_ok=True)
-        src.rename(dst)
+        _safe_move(src, dst)
         execute("UPDATE files SET status='normal' WHERE rel=?", (rel,))
         restored += 1
     if restored:
@@ -2075,7 +2213,7 @@ def api_restore():
     if dst.exists():
         return jsonify({"ok": False, "error": "原位置已存在同名文件"}), 409
     src.parent.mkdir(parents=True, exist_ok=True)
-    src.rename(dst)
+    _safe_move(src, dst)
     execute("UPDATE files SET status='normal' WHERE rel=?", (rel,))
     invalidate_tags()
     return jsonify({"ok": True})
@@ -2793,7 +2931,7 @@ def api_dupe_scan():
     if _batch_busy():
         return jsonify({"ok": False, "error": "全库静默检测进行中，等它跑完或先「停止」再单测"}), 409
     py = _ml_python()
-    script = ML_DIR / "dupes.py"
+    script = ML_CODE / "dupes.py"
     if not py or not script.exists():
         return jsonify({"ok": False, "error": "未配置 ml_python 或缺少 ml/dupes.py"}), 400
     try:
@@ -2812,6 +2950,7 @@ def api_dupe_scan():
         args += ["--skip-mode", _dupe_skip_mode(data.get("mode"))]
         env = os.environ.copy()
         env["DUPE_WORKERS"] = "4"
+        env["EMOJI_DATA"] = str(DATA_DIR)
         log = open(str(ML_DIR / "dupes.log"), "ab")
         flags = 0x08000000 if os.name == "nt" else 0
         _DUPE_JOB["proc"] = subprocess.Popen(
@@ -2905,7 +3044,7 @@ def api_dupe_batch():
     if _dupe_running():
         return jsonify({"ok": False, "error": "单角色检测进行中：%s" % _DUPE_JOB.get("char", "")}), 409
     py = _ml_python()
-    script = ML_DIR / "dupes_batch.py"
+    script = ML_CODE / "dupes_batch.py"
     if not py or not script.exists():
         return jsonify({"ok": False, "error": "未配置 ml_python 或缺少 ml/dupes_batch.py"}), 400
     args = [py, str(script)]
@@ -2929,10 +3068,12 @@ def api_dupe_batch():
             BATCH_STOP.unlink()
         log = open(str(ML_DIR / "dupes_batch.log"), "ab")
         flags = 0x08000000 if os.name == "nt" else 0
+        env = os.environ.copy()
+        env["EMOJI_DATA"] = str(DATA_DIR)
         with _BATCH_LOCK:
             _BATCH_JOB["proc"] = subprocess.Popen(
                 args, cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
-                stdout=log, stderr=log, creationflags=flags,
+                stdout=log, stderr=log, env=env, creationflags=flags,
             )
             _BATCH_JOB["started"] = time.time()
         return jsonify({"ok": True, "running": True, "args": args[2:]})
@@ -3271,7 +3412,7 @@ def api_trash_batch():
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists():
             dst = dst.with_name(dst.stem + "_" + str(int(time.time())) + dst.suffix)
-        src.rename(dst)
+        _safe_move(src, dst)
         mark_trashed(rel, dst)
         delete_thumb(rel)
         moved += 1

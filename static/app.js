@@ -3068,9 +3068,44 @@ function bindEvents() {
     }
   });
 
+  if ($("sb-lib")) $("sb-lib").addEventListener("click", editLibPath);
+
   new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting && !state.done && !state.loading && (state.view === "all" || state.view === "untagged")) loadFiles(false);
   }).observe($("sentinel"));
+}
+
+/* ---- 库路径（配置项，写进 config.local.json，不进 git） ---- */
+async function loadLibPath() {
+  const el = $("sb-lib-path");
+  if (!el) return;
+  try {
+    const cfg = await api("/api/config");
+    state.libPath = cfg.root || "";
+    el.textContent = state.libPath || "未配置";
+    const tip = ["库路径：" + (cfg.root || "-"), "数据目录：" + (cfg.data_dir || "-"),
+                 "废纸篓：" + (cfg.trash_dir || "-"), "点击修改（重启生效）"].join("\n");
+    el.title = tip;
+    if ($("sb-lib")) $("sb-lib").title = tip;
+  } catch (e) {
+    el.textContent = "读取失败";
+  }
+}
+
+async function editLibPath() {
+  const cur = state.libPath || "";
+  const val = prompt("库路径（表情包图片所在的根目录）：\n保存后需要重启服务生效。", cur);
+  if (val === null) return;
+  const p = val.trim();
+  if (!p || p === cur) return;
+  try {
+    const r = await api("/api/config/root", { method: "POST", body: JSON.stringify({ root: p }) });
+    const el = $("sb-lib-path");
+    if (el) el.textContent = (r && r.root ? r.root : p) + "（待重启）";
+    toast("已保存到 config.local.json，重启服务后生效");
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 /* ================= 启动 ================= */
@@ -3080,6 +3115,7 @@ window.addEventListener("error", (e) => toast("脚本错误: " + (e.message || "
   loadRecentTags();
   bindEvents();
   mountTagEditors();
+  loadLibPath();          // 库路径：独立请求，不挡文件列表
   try { await loadTags(); } catch (e) { toast("标签加载失败：" + e.message, "error"); }
   try { await loadFiles(true); } catch (e) { toast("文件加载失败：" + e.message, "error"); }
   refreshInbox();

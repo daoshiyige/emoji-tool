@@ -38,3 +38,6 @@ ml/proto.json
 ml/dupe_batch.json
 ml/dupe_batch.stop
 ml/dupes_batch.log
+
+# ===== 本机配置（路径 / 解释器，换机器会覆盖） =====
+config.local.json

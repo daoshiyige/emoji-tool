@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>表情库 · 本地整理</title>
   <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css?v=37">
+<link rel="stylesheet" href="/static/style.css?v=38">
 </head>
 <body>
 <header class="topbar">
@@ -103,6 +103,11 @@
         <div class="chips" id="chips-special"></div>
       </div>
     </section>
+
+    <div class="sb-lib" id="sb-lib" title="点击修改库路径（写入 config.local.json，重启生效）">
+      <span class="sb-lib-k">库路径</span>
+      <span class="sb-lib-v" id="sb-lib-path">读取中…</span>
+    </div>
   </aside>
 
   <main class="content">
@@ -303,6 +308,6 @@
   <div class="scanbar-track"><i id="scan-fill"></i></div>
 </div>
 
-<script src="/static/app.js?v=42"></script>
+<script src="/static/app.js?v=44"></script>
 </body>
 </html>

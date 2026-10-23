@@ -15,31 +15,46 @@
 
 ## 在新电脑上用（clone 下来怎么跑）
 
+代码 / 运行数据 / 库 三层是分开的，三者可以放在不同位置（不同盘也行）：
+
+| 层 | 放什么 | 落在哪 |
+|---|---|---|
+| 代码 | `app.py` `static/` `templates/` `ml/*.py` 文档 | 这个仓库（≈1.2 MB） |
+| 运行数据 | `library.db` `cache/` 模型/向量/日志 | `data_dir`（不配 = 代码目录） |
+| 库 | 图片本体 | `root` 指向的目录，废纸篓在它下面的 `.trash/` |
+
 ```bat
-:: 1) 拉代码（惯例是放成图片根目录下的 .emoji-tool；放别处也行，只要第 3 步的 root 指对）
-git clone git@github.com:daoshiyige/emoji-tool.git .emoji-tool
-cd .emoji-tool
+:: 1) 拉代码（放哪都行，不必在库目录里）
+git clone git@github.com:daoshiyige/emoji-tool.git emoji-tool
+cd emoji-tool
 
 :: 2) 建环境（Python 3.10+，本机 3.13 实测）
 py -3 -m venv venv
 venv\Scripts\python -m pip install -r requirements.txt
 
-:: 3) 把 config.json 的 root 改成这台机器的图片根目录（反斜杠要写 \\，或者直接用 /）
-::    例： "root": "D:/BA/表情包"
+:: 3) 写本机配置 config.local.json（不进 git，覆盖 config.json 的同名项）
+::    {
+::      "root": "D:/BA/表情包",          ← 库路径
+::      "data_dir": "D:/BA/emoji-data",  ← 运行数据目录，不写就落在代码目录
+::      "ml_python": "python 绝对路径"    ← 角色候选/相似图用的独立解释器
+::    }
 
-:: 4) 启动（双击仓库里的 启动网页.bat 也可以）
+:: 4) 启动（双击仓库里的 启动网页.bat 也行）
 venv\Scripts\python app.py --open
 ```
 
-首次启动会自动创建 `library.db`、`cache\`、`trash\`，然后点右上角「扫描」建索引
-（9.6 万张第一次要跑几分钟，之后稳态扫描 1~2 秒）。
+也可以完全不用配置文件：`set EMOJI_ROOT=D:\BA\表情包`、`set EMOJI_DATA=D:\BA\emoji-data` 后启动，环境变量优先。
+
+首次启动自动建 `library.db`、`cache\`、模型目录，然后点右上角「扫描」建索引（9.6 万张第一次要跑几分钟，之后稳态扫描 1~2 秒）。
 
 注意：
 
-- 目录名不必叫 `.emoji-tool`，放哪都行；`library.db` / `cache` / `trash` 都落在**代码所在目录**
-- 仓库不带索引库和缩略图。想把索引一起搬过去，单独拷 `library.db`（app.py 版本要一致）
+- **库路径没配置或指向不存在的目录时，启动会直接报错退出**并打印怎么配——不会默默扫错目录
+- 废纸篓默认在库根 `.trash\`（与图片同盘，删图是瞬间 rename）；要放别处配 `trash_dir`，跨盘会自动退化成复制
+- 网页侧栏底部显示当前库路径，点一下就能改（写进 `config.local.json`，**重启生效**）
+- 从旧布局升级（数据还在代码目录里）：先 `python tools/migrate_data.py` 看清单，确认后加 `--apply`
+- 仓库不带索引库和缩略图，都是可重建的；`library.db` 想一起搬单拷即可（app.py 版本要一致）
 - 依赖只有三个：Flask / Pillow / pypinyin（缺 `pypinyin` 只是拼音搜索失效，不会报错）
-- `root` 指错或目录不存在时，界面是空的、扫描也扫不到东西 —— 先改 `config.json`
 - 私有仓库要先登录（`gh auth login` 或配好 SSH key）；国内 SSH 22 口时通时断，clone 失败直接重试，或改用 HTTPS
 
 
@@ -153,5 +168,10 @@ python .emoji-tool\ml\dupes_batch.py --limit 20 # 先试 20 个
 
 ## 配置
 
-`config.json` 可调：`artist_min_files`（最低数量）、`artist_threshold_ratio`（动态比例）、
-`pair_characters`（递归角色）、`diff_type_denylist`（差分内的类型名黑名单）等。
+两个文件，合并生效（后者覆盖前者）：
+
+- `config.json`（进 git）：默认值、业务阈值。`artist_min_files`、`artist_threshold_ratio`、`pair_characters`、`diff_type_denylist` 等
+- `config.local.json`（**不进 git**，本机专属）：`root` 库路径、`data_dir` 数据目录、`trash_dir` 废纸篓、`ml_python` 解释器、端口等
+
+环境变量优先级最高：`EMOJI_ROOT`（库路径）、`EMOJI_DATA`（数据目录）、`EMOJI_TRASH`（废纸篓）。
+`root` / `data_dir` / `trash_dir` 是启动时解析的，改完要重启；其余项热加载。

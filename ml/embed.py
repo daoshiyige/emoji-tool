@@ -32,17 +32,40 @@ import onnxruntime as ort
 from PIL import Image
 
 BASE = Path(os.environ.get("EMOJI_BASE", str(Path(__file__).resolve().parent.parent)))
+
+
+def _cfg_all():
+    """config.json（默认值）+ config.local.json（本机覆盖）合并。"""
+    cfg = {}
+    for name in ("config.json", "config.local.json"):
+        try:
+            cfg.update(json.loads((BASE / name).read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return cfg
+
+
+def _data_dir():
+    """运行数据目录：EMOJI_DATA > config 的 data_dir > 项目目录（和 app.py 同规则）。"""
+    raw = os.environ.get("EMOJI_DATA") or str(_cfg_all().get("data_dir") or "").strip()
+    if not raw:
+        return BASE
+    p = Path(raw)
+    if not p.is_absolute():
+        p = BASE / p
+    return p
+
+
 def _cfg_root():
-    try:
-        import json as _json
-        cfg = _json.loads((BASE / "config.json").read_text(encoding="utf-8"))
-        return str(cfg.get("root") or "").strip()
-    except Exception:
-        return ""
+    return str(_cfg_all().get("root") or "").strip()
 
 
-ROOT = Path(os.environ.get("EMOJI_ROOT") or _cfg_root() or str(BASE.parent))
-ML = BASE / "ml"
+DATA = _data_dir()
+_root_raw = os.environ.get("EMOJI_ROOT") or _cfg_root()
+if not _root_raw:
+    raise SystemExit("没有配置库路径：在 config.local.json 里设 root，或设环境变量 EMOJI_ROOT")
+ROOT = Path(_root_raw)
+ML = DATA / "ml"
 MODEL = Path(os.environ.get("EMBED_MODEL", str(ML / "models" / "vision_model.onnx")))
 SIZE = 224
 RAW_DIM = 512
@@ -106,7 +129,7 @@ def load_rels():
     未处理的图在归位前根本不在 files 表里（/api/inbox 是直接读盘的），
     所以必须单独补进来，否则它们永远没有向量、也永远没有候选。
     """
-    con = sqlite3.connect("file:%s?mode=ro" % (BASE / "library.db"), uri=True)
+    con = sqlite3.connect("file:%s?mode=ro" % (DATA / "library.db").as_posix(), uri=True)
     con.row_factory = sqlite3.Row
     rows = con.execute("SELECT rel, characters FROM files WHERE status='normal' ORDER BY rel").fetchall()
     out = [(r["rel"], (r["characters"] or "").split(",")[0].strip()) for r in rows]

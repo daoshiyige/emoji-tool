@@ -64,7 +64,7 @@ def start_heartbeat():
 
 def load_cfg():
     try:
-        cfg = json.loads((dupes.BASE / "config.json").read_text(encoding="utf-8"))
+        cfg = dupes._cfg_all()
     except Exception:
         cfg = {}
     th = int(cfg.get("dupe_threshold") or 8)
