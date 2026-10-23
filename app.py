@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 r"""表情包本地整理工具 (Demo)
 基于 Flask 的本地网页：扫描、打标、筛选、预览、重命名、废纸篓。
-运行:  .emoji-tool\venv\Scripts\python .emoji-tool\app.py
+
+三层分离：代码在哪个目录都行（本文件所在），运行数据放 data_dir，
+图片库放 root，三者可分别在不同盘。配置见 config.local.json。
+运行:  venv\Scripts\python app.py --open      （或双击 启动网页.bat）
 """
 from __future__ import annotations
 
@@ -441,7 +444,7 @@ def collect_folder_artist_names():
     """扫描目录名，收集出现在画师文件夹位置上的名字（不含 denylist 类型名）。"""
     names = set()
     for dirpath, dirnames, _ in os.walk(ROOT):
-        # 库根下的 .trash / .emoji-tool 这类点目录一律不深入（废纸篓里的
+        # 库根下的 .trash 这类点目录一律不深入（废纸篓里的
         # 「差分/1（画师）」也在库根，不排除会把画师名混进来）
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         parts = os.path.relpath(dirpath, ROOT).split(os.sep)

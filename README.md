@@ -19,12 +19,12 @@
 
 | 层 | 放什么 | 落在哪 |
 |---|---|---|
-| 代码 | `app.py` `static/` `templates/` `ml/*.py` 文档 | 这个仓库（≈1.2 MB） |
+| 代码 | `app.py` `static/` `templates/` `ml/*.py` 文档 | 这个仓库（≈1.2 MB），位置随意 |
 | 运行数据 | `library.db` `cache/` 模型/向量/日志 | `data_dir`（不配 = 代码目录） |
 | 库 | 图片本体 | `root` 指向的目录，废纸篓在它下面的 `.trash/` |
 
 ```bat
-:: 1) 拉代码（放哪都行，不必在库目录里）
+:: 1) 拉代码（放哪都行，不必在库目录里；本机放在 F://BA//emoji-tool）
 git clone git@github.com:daoshiyige/emoji-tool.git emoji-tool
 cd emoji-tool
 
@@ -53,6 +53,7 @@ venv\Scripts\python app.py --open
 - 废纸篓默认在库根 `.trash\`（与图片同盘，删图是瞬间 rename）；要放别处配 `trash_dir`，跨盘会自动退化成复制
 - 网页侧栏底部显示当前库路径，点一下就能改（写进 `config.local.json`，**重启生效**）
 - 从旧布局升级（数据还在代码目录里）：先 `python tools/migrate_data.py` 看清单，确认后加 `--apply`
+- 库目录里如果留了一个 `启动网页.bat`，它会按 `EMOJI_TOOL` → 同级 `.emoji-tool` → `.emoji-tool.path`（第一行写代码目录）找工具，代码搬到哪都不用改这个 bat
 - 仓库不带索引库和缩略图，都是可重建的；`library.db` 想一起搬单拷即可（app.py 版本要一致）
 - 依赖只有三个：Flask / Pillow / pypinyin（缺 `pypinyin` 只是拼音搜索失效，不会报错）
 - 私有仓库要先登录（`gh auth login` 或配好 SSH key）；国内 SSH 22 口时通时断，clone 失败直接重试，或改用 HTTPS
