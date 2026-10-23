@@ -15,18 +15,28 @@
 
 ## 在新电脑上用（clone 下来怎么跑）
 
-代码 / 运行数据 / 库 三层是分开的，三者可以放在不同位置（不同盘也行）：
+代码 / 运行数据 / 库 三层是分开的，三者可以放在不同位置（不同盘也行）。本机把前两层放进同一个总文件夹：
+
+```
+F:\BA\emoji\
+├── 启动网页.bat      ← 双击这个启动（找 code\app.py + code\venv）
+├── code\             ← 代码 + venv（git 仓库，≈1.2 MB）
+└── data\             ← 运行数据（library.db / cache / 模型 / 日志）
+```
+
+图片库在别处（本机 `F:\BA\表情包`），废纸篓是库根下的 `.trash/`。
 
 | 层 | 放什么 | 落在哪 |
 |---|---|---|
-| 代码 | `app.py` `static/` `templates/` `ml/*.py` 文档 | 这个仓库（≈1.2 MB），位置随意 |
+| 代码 | `app.py` `static/` `templates/` `ml/*.py` 文档 | `code\`（位置随意） |
 | 运行数据 | `library.db` `cache/` 模型/向量/日志 | `data_dir`（不配 = 代码目录） |
 | 库 | 图片本体 | `root` 指向的目录，废纸篓在它下面的 `.trash/` |
 
 ```bat
-:: 1) 拉代码（放哪都行，不必在库目录里；本机放在 F://BA//emoji-tool）
-git clone git@github.com:daoshiyige/emoji-tool.git emoji-tool
-cd emoji-tool
+:: 1) 建总文件夹，代码放进去（不必在库目录里）
+mkdir F:\BA\emoji
+git clone git@github.com:daoshiyige/emoji-tool.git F:\BA\emoji\code
+cd F:\BA\emoji\code
 
 :: 2) 建环境（Python 3.10+，本机 3.13 实测）
 py -3 -m venv venv
@@ -34,16 +44,16 @@ venv\Scripts\python -m pip install -r requirements.txt
 
 :: 3) 写本机配置 config.local.json（不进 git，覆盖 config.json 的同名项）
 ::    {
-::      "root": "D:/BA/表情包",          ← 库路径
-::      "data_dir": "D:/BA/emoji-data",  ← 运行数据目录，不写就落在代码目录
-::      "ml_python": "python 绝对路径"    ← 角色候选/相似图用的独立解释器
+::      "root": "D:/BA/表情包",               ← 库路径
+::      "data_dir": "D:/BA/emoji/data",       ← 运行数据目录，不写就落在代码目录
+::      "ml_python": "python 绝对路径"         ← 角色候选/相似图用的独立解释器
 ::    }
 
-:: 4) 启动（双击仓库里的 启动网页.bat 也行）
-venv\Scripts\python app.py --open
+:: 4) 启动：双击 F:\BA\emoji\启动网页.bat（推荐）
+::    或在 code 目录里 venv\Scripts\python app.py --open
 ```
 
-也可以完全不用配置文件：`set EMOJI_ROOT=D:\BA\表情包`、`set EMOJI_DATA=D:\BA\emoji-data` 后启动，环境变量优先。
+也可以完全不用配置文件：`set EMOJI_ROOT=D:\BA\表情包`、`set EMOJI_DATA=D:\BA\emoji\data` 后启动，环境变量优先。
 
 首次启动自动建 `library.db`、`cache\`、模型目录，然后点右上角「扫描」建索引（9.6 万张第一次要跑几分钟，之后稳态扫描 1~2 秒）。
 
