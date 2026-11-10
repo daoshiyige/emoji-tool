@@ -293,6 +293,21 @@ def execute(sql, params=()):
         db.commit()
 
 
+SORT_INDEX_NAMES = ["idx_files_order", "idx_files_mtime", "idx_files_ctime",
+                    "idx_files_size", "idx_files_name"]
+
+# 排序索引：9.8 万行时默认排序要建临时 B 树（约 50ms/次），带 status 前缀后
+# 变成有序索引扫描 + LIMIT 提前结束（约 1ms）。整库重打标时先删后建更快，
+# 所以这些语句单独拎出来、init_db 和 scan_disk 共用。
+SORT_INDEX_DDL = """
+            CREATE INDEX IF NOT EXISTS idx_files_order ON files(status, academy, folder, name);
+            CREATE INDEX IF NOT EXISTS idx_files_mtime ON files(status, mtime DESC);
+            CREATE INDEX IF NOT EXISTS idx_files_ctime ON files(status, ctime DESC);
+            CREATE INDEX IF NOT EXISTS idx_files_size  ON files(status, size DESC);
+            CREATE INDEX IF NOT EXISTS idx_files_name  ON files(status, name COLLATE NOCASE);
+"""
+
+
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.closing(_connect()) as db:
@@ -318,7 +333,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_files_artist ON files(artist);
             CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
             CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
-            """
+            """ + SORT_INDEX_DDL
         )
         db.commit()
         cols = {r[1] for r in db.execute("PRAGMA table_info(files)")}
@@ -962,6 +977,11 @@ def scan_disk():
     t_db = time.time()
     with contextlib.closing(_connect()) as db:
         chunk = 2000
+        # 整库重打标（别名/配置变动）要写近 10 万行，逐行维护 5 个排序索引要 17 秒。
+        # 先删索引、写完再建（建 5 个索引约 0.7 秒），整段能快 4~5 倍。
+        rebuild_idx = len(rows) > 4000
+        if rebuild_idx:
+            db.executescript("".join("DROP INDEX IF EXISTS %s;\n" % n for n in SORT_INDEX_NAMES))
         for i in range(0, len(rows), chunk):
             db.executemany(SCAN_UPSERT_SQL, rows[i:i + chunk])
             stats["done"] = min(len(rows), i + chunk)
@@ -972,6 +992,8 @@ def scan_disk():
         stats["missing"] = len(gone)
         db.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('last_scan', ?)", (str(time.time()),))
         db.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('scan_fingerprint', ?)", (fp_now,))
+        if rebuild_idx:
+            db.executescript(SORT_INDEX_DDL)
         db.commit()
     t_db = time.time() - t_db
     stats["phase"] = "done"
@@ -1505,6 +1527,12 @@ def make_thumb(rel):
             with Image.open(src) as im:
                 try:
                     im.seek(0)
+                except Exception:
+                    pass
+                # JPEG 让解码器直接按 1/2、1/4 降采样出图，几千像素的大图能快好几倍
+                # （draft 只对 JPEG 生效，其它格式是空操作）
+                try:
+                    im.draft("RGB", (560, 560))
                 except Exception:
                     pass
                 if im.mode not in ("RGB", "RGBA"):
@@ -2061,6 +2089,7 @@ def api_files():
         "SELECT * FROM files WHERE %s ORDER BY %s LIMIT ? OFFSET ?" % (where, order),
         params + [limit, offset],
     )
+    _FIRST_LIST.set()
     return jsonify({"total": total, "files": [row_to_dict(r) for r in rows], "note": note})
 
 
@@ -3987,7 +4016,13 @@ def api_error(e):
 
 
 # ---------------------------------------------------------------- 缩略图预热
-def warmup_thumbs(n=240):
+_FIRST_LIST = threading.Event()   # 首屏列表响应过没有（缩略图预热据此让路）
+
+
+def warmup_thumbs(n=120):
+    # 等首屏列表先回来再预热：预热本身也要解码图片、占 _THUMB_SEM，
+    # 和第一次加载抢磁盘时，首屏会明显变慢（表现是「打开页面空白一会儿」）。
+    _FIRST_LIST.wait(timeout=60)
     try:
         rows = query(
             "SELECT rel FROM files WHERE status='normal' ORDER BY academy, folder, name LIMIT ?",

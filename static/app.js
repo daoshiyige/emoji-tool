@@ -605,6 +605,16 @@ async function loadFacets() {
   refreshFilterToolbar(); // 顶部下拉里开着的那一组计数也要跟着换
 }
 
+function skelCards(n) {
+  // 首屏占位：9.8 万行的列表接口要几十毫秒到几百毫秒，先铺骨架，
+  // 不要「清空 → 空白 → 突然出现卡片」那种闪白。
+  let out = "";
+  for (let i = 0; i < (n || 18); i++) {
+    out += `<div class="card skel" aria-hidden="true"><div class="thumb"></div><div class="card-info"><i class="sk-l"></i><i class="sk-l short"></i></div></div>`;
+  }
+  return out;
+}
+
 async function loadFiles(reset) {
   if (state.view !== "all" && state.view !== "untagged") return; // 非库视图不加载，也不清空 #grid
   if (!reset && state.loading) return;
@@ -613,7 +623,9 @@ async function loadFiles(reset) {
   if (reset) {
     state.offset = 0; state.done = false; state.files = [];
     clearSelection(true); closeInspector();
-    $("grid").innerHTML = ""; $("grid").style.gridTemplateColumns = "";
+    $("grid").style.gridTemplateColumns = "";
+    $("grid").innerHTML = skelCards(18);
+    state.skel = true;
     scheduleFacets();
   }
   const reqOffset = state.offset;
@@ -621,6 +633,7 @@ async function loadFiles(reset) {
     const data = await api("/api/files?" + buildQuery());
     if (seq !== state.loadSeq) return; // 过期响应：期间又发起了新搜索/筛选，忽略旧结果
     if (state.view !== "all" && state.view !== "untagged") return; // 已切到未处理/相似图等视图，别把库里卡片塞进去
+    if (state.skel) { $("grid").innerHTML = ""; state.skel = false; }
     state.files = state.files.concat(data.files);
     state.total = data.total;
     state.done = state.files.length >= data.total;
@@ -631,6 +644,7 @@ async function loadFiles(reset) {
     $("sentinel").hidden = state.done;
     state.offset = reqOffset + data.files.length;
   } catch (e) {
+    if (state.skel) { $("grid").innerHTML = ""; state.skel = false; }
     if (seq === state.loadSeq) toast(e.message, "error");
   } finally {
     if (seq === state.loadSeq) state.loading = false;

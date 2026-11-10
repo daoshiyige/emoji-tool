@@ -65,6 +65,8 @@ venv\Scripts\python -m pip install -r requirements.txt
 - 从旧布局升级（数据还在代码目录里）：先 `python tools/migrate_data.py` 看清单，确认后加 `--apply`
 - 库目录里如果留了一个 `启动网页.bat`，它会按 `EMOJI_TOOL` → 同级 `.emoji-tool` → `.emoji-tool.path`（第一行写代码目录）找工具，代码搬到哪都不用改这个 bat
 - 仓库不带索引库和缩略图，都是可重建的；`library.db` 想一起搬单拷即可（app.py 版本要一致）
+- 索引库带 5 个排序索引（`status` 前缀），10 万行下翻页/换排序都是毫秒级；库体积因此约 60 MB
+- 首屏有骨架占位，缩略图在首屏列表返回后才会后台预热，避免打开页面先卡一下
 - 依赖只有三个：Flask / Pillow / pypinyin（缺 `pypinyin` 只是拼音搜索失效，不会报错）
 - 私有仓库要先登录（`gh auth login` 或配好 SSH key）；国内 SSH 22 口时通时断，clone 失败直接重试，或改用 HTTPS
 

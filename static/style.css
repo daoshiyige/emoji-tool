@@ -494,3 +494,11 @@ input:focus, select:focus { border-color: var(--accent); }
 .sb-lib-v { display: block; font-size: 11.5px; color: var(--mut); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; direction: rtl; text-align: left; }
 .sb-lib:hover .sb-lib-v { color: var(--txt); }
+
+/* 首屏骨架（列表加载中占位，避免闪白） */
+.card.skel { cursor: default; pointer-events: none; }
+.card.skel .thumb { background: linear-gradient(100deg, #eef0f3 20%, #f7f8fa 40%, #eef0f3 60%); background-size: 220% 100%; animation: skel 1.15s linear infinite; }
+.card.skel .sk-l { display: block; height: 10px; border-radius: 4px; margin-bottom: 6px;
+  background: linear-gradient(100deg, #eef0f3 20%, #f7f8fa 40%, #eef0f3 60%); background-size: 220% 100%; animation: skel 1.15s linear infinite; }
+.card.skel .sk-l.short { width: 58%; margin-bottom: 0; }
+@keyframes skel { from { background-position: 120% 0; } to { background-position: -120% 0; } }
