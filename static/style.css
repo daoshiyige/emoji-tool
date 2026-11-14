@@ -331,6 +331,12 @@ input:focus, select:focus { border-color: var(--accent); }
 .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #f9fafb; border: 1px solid #374151; padding: 9px 18px; border-radius: 20px; z-index: 90; box-shadow: var(--shadow); font-size: 13px; }
 .toast.error { border-color: var(--red); }
 .toast.warn { border-color: var(--yellow); color: #fde68a; }
+/* 带「撤销」的提示（批量操作不再弹 confirm，用 7 秒撤销兜底） */
+.toast { display: flex; align-items: center; gap: 10px; }
+.toast-msg { white-space: nowrap; }
+.toast-act { border: 1px solid rgba(255,255,255,.34); background: transparent; color: #fbbf24;
+  font-size: 12.5px; line-height: 1.5; padding: 2px 10px; border-radius: 12px; cursor: pointer; font-family: inherit; }
+.toast-act:hover { background: rgba(255,255,255,.14); color: #fff; }
 .scanbar { position: fixed; top: 104px; right: 18px; background: var(--panel); border: 1px solid var(--accent); padding: 10px 14px; border-radius: 10px; z-index: 66; font-size: 12px; box-shadow: var(--shadow); min-width: 260px; display: flex; flex-direction: column; gap: 7px; }
 .scanbar-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .scanbar-row #scan-progress { color: var(--mut2); font-variant-numeric: tabular-nums; }
@@ -408,6 +414,10 @@ input:focus, select:focus { border-color: var(--accent); }
 .dupe-item { margin: 0; width: 190px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
 .dupe-thumb { display: block; height: 150px; background: var(--panel2); }
 .dupe-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* 缩略图由 <a> 改成 <button>：抹掉按钮默认外观，悬停给点"可点"的反馈 */
+button.dupe-thumb { width: 100%; padding: 0; border: 0; background: var(--panel2); cursor: zoom-in; }
+button.dupe-thumb img { transition: opacity .12s; }
+button.dupe-thumb:hover img { opacity: .85; }
 .dupe-item figcaption { padding: 6px 8px 8px; }
 .dupe-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dupe-path { font-size: 11px; color: var(--mut2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

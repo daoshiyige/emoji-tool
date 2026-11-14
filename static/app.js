@@ -10,6 +10,7 @@ const state = {
   selected: new Set(),
   loadSeq: 0, // 请求序号：防止旧搜索响应覆盖新结果
   viewerIdx: -1,
+  viewerList: null, // 查看器翻页源：默认 state.files；相似图里传组内文件
   current: null, // 属性面板/查看器当前文件
   lastFile: null,
   modalMode: "single", // single | batch | place
@@ -58,6 +59,21 @@ function toast(msg, type = "info") {
   t.hidden = false;
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* 带「撤销」的提示：省掉一次确认点击，误操作留一条后路（删除本质是移入废纸篓，可恢复） */
+function toastUndo(msg, onUndo, ms = 7000) {
+  const t = $("toast");
+  t.className = "toast info";
+  t.innerHTML = `<span class="toast-msg">${esc(msg)}</span><button class="toast-act" type="button">撤销</button>`;
+  t.hidden = false;
+  clearTimeout(t._timer);
+  t.querySelector(".toast-act").addEventListener("click", async () => {
+    t.hidden = true;
+    clearTimeout(t._timer);
+    try { await onUndo(); } catch (e) { toast(e.message, "error"); }
+  });
+  t._timer = setTimeout(() => { t.hidden = true; }, ms);
 }
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const debouncedSearch = debounce(() => { if (state.view === "all" || state.view === "untagged") loadFiles(true); }, 350);
@@ -1748,10 +1764,11 @@ function refreshCardBadges(rel) {
 }
 
 /* ================= 全屏查看器 ================= */
-function openViewer(f) {
+function openViewer(f, list) {
   state.current = f;
   state.lastFile = f;
-  state.viewerIdx = state.files.findIndex((x) => x.rel === f.rel);
+  state.viewerList = (list && list.length) ? list : state.files;
+  state.viewerIdx = state.viewerList.findIndex((x) => x.rel === f.rel);
   $("vw-img").src = fileUrl(f.rel, f.mtime);
   $("vw-name").textContent = f.name;
   $("vw-path").textContent = f.folder || "未处理";
@@ -1766,23 +1783,29 @@ function openViewer(f) {
   if (f.artist && state.tags.artist_aliases && state.tags.artist_aliases[f.artist]) {
     vmeta += `<b>画师别名</b><span>${esc(state.tags.artist_aliases[f.artist].join("、"))}</span>`;
   }
+  // 组内翻页时标出位置，方便知道还剩几张没看
+  if (state.viewerList && state.viewerList.length > 1 && state.viewerIdx >= 0) {
+    vmeta = `<b>位置</b><span>${state.viewerIdx + 1} / ${state.viewerList.length}</span>` + vmeta;
+  }
   $("vw-meta").innerHTML = vmeta;
   $("viewer").hidden = false;
 }
 
 function closeViewer() {
   if (state.current && state.pendingMove.has(state.current.rel)) flushPendingMoves([state.current.rel]);
-  $("viewer").hidden = true; state.current = null;
+  $("viewer").hidden = true; state.current = null; state.viewerList = null;
 }
 
 function vwNav(dir) {
   if (state.viewerIdx < 0) return;
+  const list = state.viewerList || state.files;
   const idx = state.viewerIdx + dir;
-  if (idx < 0 || idx >= state.files.length) {
-    if (!state.done && !state.loading) loadFiles(false);
+  if (idx < 0 || idx >= list.length) {
+    // 只有跟着库列表翻页时才需要续加载；组内翻页到边界就停住
+    if (list === state.files && !state.done && !state.loading) loadFiles(false);
     return;
   }
-  openViewer(state.files[idx]);
+  openViewer(list[idx], list);
 }
 
 /* ================= 重命名 ================= */
@@ -2207,7 +2230,7 @@ async function renderDupeGroups(char) {
           ${g.files.map((f) => `
             <figure class="dupe-item" data-rel="${esc(f.rel)}">
               <label class="dupe-pick" title="勾选两张做闪烁比对"><input type="checkbox" class="dupe-cb" tabindex="-1"></label>
-              <a class="dupe-thumb" href="${fileUrl(f.rel, f.mtime)}" target="_blank" rel="noreferrer"><img loading="lazy" src="${thumbUrl(f.rel, f.mtime)}" alt=""></a>
+              <button class="dupe-thumb" type="button" title="点击预览 · ←/→ 切换同组图片"><img loading="lazy" src="${thumbUrl(f.rel, f.mtime)}" alt=""></button>
               <figcaption>
                 <div class="dupe-name" title="${esc(f.rel)}">${esc(f.name)}</div>
                 <div class="dupe-path">${esc(f.folder)}</div>
@@ -2229,20 +2252,38 @@ async function renderDupeGroups(char) {
     const left = grid.querySelectorAll(".dupe-group").length;
     $("result-count").textContent = `${char} · ${fmtCount(data.files)} 张 · ${left} 组（阈值 ${data.th ?? "-"}，相似度 ≥ ${data.cos ?? "-"}）`;
     $("nav-dupes").textContent = left ? fmtCount(left) : "";
+    let empty = grid.querySelector(".dupe-empty");
     if (!left) {
-      const box = document.createElement("div");
-      box.className = "empty";
-      box.style.gridColumn = "1/-1";
-      box.textContent = "这个角色的相似组都处理完了";
-      grid.appendChild(box);
-    }
+      if (!empty) {
+        empty = document.createElement("div");
+        empty.className = "empty dupe-empty";
+        empty.style.gridColumn = "1/-1";
+        empty.textContent = "这个角色的相似组都处理完了";
+        grid.appendChild(empty);
+      }
+    } else if (empty) empty.remove();
   };
 
-  const dropGroup = (el) => { el.remove(); refreshCount(); };
+  // 移除组并返回一个"原位插回"的函数：撤销时不用重新请求，界面立刻复原
+  const dropGroup = (el) => {
+    const parent = el.parentNode, next = el.nextSibling;
+    el.remove();
+    refreshCount();
+    return () => { parent.insertBefore(el, next); refreshCount(); };
+  };
 
   grid.querySelectorAll(".dupe-group").forEach((gEl) => {
     const id = gEl.dataset.id;
     const rels = [...gEl.querySelectorAll(".dupe-item")].map((x) => x.dataset.rel);
+    const groupFiles = ((data.groups || []).find((g) => g.id === id) || {}).files || [];
+
+    // 点击缩略图就地预览，←/→ 在本组内切换（不再开新标签）
+    gEl.querySelectorAll(".dupe-thumb").forEach((btn) => btn.addEventListener("click", () => {
+      const rel = btn.closest(".dupe-item").dataset.rel;
+      const f = groupFiles.find((x) => x.rel === rel)
+        || { rel, name: rel.split("/").pop(), folder: rel.split("/").slice(0, -1).join("/"), size: 0, mtime: 0 };
+      openViewer(f, groupFiles);
+    }));
 
     // ---- 勾选两张 → 闪烁比对 ----
     const grp = groups.find((x) => x.id === id) || { files: [] };
@@ -2286,26 +2327,39 @@ async function renderDupeGroups(char) {
       const keepRel = btn.closest(".dupe-item").dataset.rel;
       const others = rels.filter((r) => r !== keepRel);
       if (!others.length) return;
-      if (!confirm(`保留这张，其余 ${others.length} 张移入废纸篓？`)) return;
       try {
         const r = await api("/api/trash_batch", { method: "POST", body: JSON.stringify({ rels: others }) });
-        toast(`已移入废纸篓 ${r.moved} 张`);
-        dropGroup(gEl);
+        const restoreGroup = dropGroup(gEl);
         scheduleTagsRefresh();
+        toastUndo(`已保留这张，其余 ${r.moved ?? others.length} 张移入废纸篓`, () => {
+          restoreGroup();  // 界面先复原，不等后端
+          toast("已撤销");
+          api("/api/restore_batch", { method: "POST", body: JSON.stringify({ rels: others }) })
+            .then(() => scheduleTagsRefresh())
+            .catch((e) => toast("恢复失败：" + e.message, "error"));
+        });
       } catch (e) { toast(e.message, "error"); }
     }));
 
     gEl.querySelectorAll(".dupe-trash").forEach((btn) => btn.addEventListener("click", async () => {
       const item = btn.closest(".dupe-item");
       const rel = item.dataset.rel;
-      if (!confirm("把这 1 张移入废纸篓？")) return;
+      const itemParent = item.parentNode, itemNext = item.nextSibling;
       try {
         await api("/api/trash_batch", { method: "POST", body: JSON.stringify({ rels: [rel] }) });
-        toast("已移入废纸篓");
         item.remove();
-        if (gEl.querySelectorAll(".dupe-item").length < 2) dropGroup(gEl);
+        let restoreGroup = null;
+        if (gEl.querySelectorAll(".dupe-item").length < 2) restoreGroup = dropGroup(gEl);
         else refreshCount();
         scheduleTagsRefresh();
+        toastUndo("已移入废纸篓", () => {
+          itemParent.insertBefore(item, itemNext);
+          if (restoreGroup) restoreGroup(); else refreshCount();
+          toast("已撤销");
+          api("/api/restore_batch", { method: "POST", body: JSON.stringify({ rels: [rel] }) })
+            .then(() => scheduleTagsRefresh())
+            .catch((e) => toast("恢复失败：" + e.message, "error"));
+        });
       } catch (e) { toast(e.message, "error"); }
     }));
   });
